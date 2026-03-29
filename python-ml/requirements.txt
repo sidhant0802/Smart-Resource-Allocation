@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+aiofiles
+python-multipart
+google-generativeai
+python-dotenv
+PyMuPDF
+Pillow
+pytesseract
+requests
+numpy
+scikit-learn
+scipy
+textblob
