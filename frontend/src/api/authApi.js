@@ -78,6 +78,6 @@ export const reportApi = {
 
 // ✅ chatApi MUST be after API is created
 export const chatApi = {
-  sendMessage: (data)     => API.post('/chat/message', data),
+  sendMessage: (data)     => API.post('/chat', data),
   getHistory:  (reportId) => API.get(`/chat/${reportId}`),
 }

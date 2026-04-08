@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
-import { uploadApi, chatApi } from '../../api/authApi'  // ✅ single import
+import { uploadApi, chatApi } from '../../api/authApi'
+import mapboxgl from 'mapbox-gl'
+import 'mapbox-gl/dist/mapbox-gl.css'
+
+mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN
 
 const SEVERITY_CONFIG = {
   critical: { bg: 'bg-red-100',    text: 'text-red-700',    border: 'border-l-red-500',    label: '🔴 CRITICAL',  bar: 'bg-red-500',    score: 'text-red-600' },
@@ -30,6 +34,11 @@ export default function NgoStaffDashboard() {
   const [polledReport, setPolledReport]           = useState(null)
   const [polling, setPolling]                     = useState(false)
 
+  // Location
+  const [reportLocation, setReportLocation]     = useState(null)
+  const [locationName, setLocationName]         = useState('')
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
+
   // Voice
   const [recording, setRecording] = useState(false)
   const [voiceText, setVoiceText] = useState('')
@@ -37,17 +46,142 @@ export default function NgoStaffDashboard() {
 
   // Visibility
   const [visibilityLoading, setVisibilityLoading] = useState(null)
+  const [showSendConfirm, setShowSendConfirm]     = useState(null)
 
-  // ✅ Chat states — INSIDE component
+  // Chat states
   const [chatMessages, setChatMessages] = useState([])
   const [chatInput, setChatInput]       = useState('')
   const [chatLoading, setChatLoading]   = useState(false)
   const [showChat, setShowChat]         = useState(false)
   const chatEndRef                      = useRef(null)
 
+  // Map for location picker
+  const locationMapContainer = useRef(null)
+  const locationMap          = useRef(null)
+  const locationMarker       = useRef(null)
+
+  // Reports map
+  const reportsMapContainer = useRef(null)
+  const reportsMap          = useRef(null)
+
   useEffect(() => {
     if (activeTab === 'reports') fetchMyReports()
   }, [activeTab])
+
+  // Initialize location picker map
+  useEffect(() => {
+    if (!showLocationPicker || !locationMapContainer.current || locationMap.current) return
+
+    setTimeout(() => {
+      const userLoc = user?.location?.coordinates || [77.2090, 28.6139]
+      
+      locationMap.current = new mapboxgl.Map({
+        container: locationMapContainer.current,
+        style: 'mapbox://styles/mapbox/streets-v12',
+        center: userLoc,
+        zoom: 12,
+      })
+
+      locationMap.current.on('click', async (e) => {
+        const { lng, lat } = e.lngLat
+        
+        if (locationMarker.current) locationMarker.current.remove()
+        
+        locationMarker.current = new mapboxgl.Marker({ color: '#3B82F6' })
+          .setLngLat([lng, lat])
+          .addTo(locationMap.current)
+
+        locationMap.current.flyTo({ center: [lng, lat], zoom: 14 })
+
+        // Reverse geocoding
+        try {
+          const res = await fetch(
+            `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${mapboxgl.accessToken}&language=en`
+          )
+          const data = await res.json()
+          const placeName = data.features?.[0]?.place_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+          
+          setReportLocation({ latitude: lat, longitude: lng })
+          setLocationName(placeName)
+        } catch (err) {
+          setReportLocation({ latitude: lat, longitude: lng })
+          setLocationName(`${lat.toFixed(4)}, ${lng.toFixed(4)}`)
+        }
+      })
+    }, 300)
+
+    return () => {
+      if (locationMap.current) {
+        locationMap.current.remove()
+        locationMap.current = null
+      }
+    }
+  }, [showLocationPicker])
+
+  // Initialize reports map
+  useEffect(() => {
+    if (activeTab !== 'reports' || !reportsMapContainer.current || reportsMap.current || myReports.length === 0) return
+
+    const reportsWithLocation = myReports.filter(r => r.location?.coordinates)
+    if (reportsWithLocation.length === 0) return
+
+    reportsMap.current = new mapboxgl.Map({
+      container: reportsMapContainer.current,
+      style: 'mapbox://styles/mapbox/light-v11',
+      center: user?.location?.coordinates || [77.2090, 28.6139],
+      zoom: 10,
+    })
+
+    reportsMap.current.addControl(new mapboxgl.NavigationControl(), 'top-right')
+
+    const bounds = new mapboxgl.LngLatBounds()
+
+    reportsWithLocation.forEach(report => {
+      const [lng, lat] = report.location.coordinates
+      const severity = report.analysis?.severityLevel || 'info'
+      
+      const markerColor = {
+        critical: '#EF4444',
+        high: '#F59E0B',
+        medium: '#FBBF24',
+        low: '#10B981',
+        info: '#6B7280'
+      }[severity] || '#6B7280'
+
+      const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(`
+        <div style="padding:10px;min-width:200px;">
+          <h3 style="font-weight:bold;font-size:14px;margin:0 0 4px 0;">${report.title}</h3>
+          <p style="font-size:11px;color:#666;margin:0 0 6px 0;">
+            ${SEVERITY_CONFIG[severity]?.label || 'INFO'}
+          </p>
+          <div style="background:#f3f4f6;padding:4px 8px;border-radius:6px;margin-bottom:6px;">
+            <p style="font-size:10px;color:#666;margin:0;">Urgency: ${report.analysis?.urgencyScore || 0}/100</p>
+          </div>
+          <p style="font-size:11px;color:#999;margin:4px 0 0 0;">
+            ${report.visibility === 'sent' ? '✅ Sent to Committee' : '📝 Draft'}
+          </p>
+        </div>
+      `)
+
+      new mapboxgl.Marker({ color: markerColor })
+        .setLngLat([lng, lat])
+        .setPopup(popup)
+        .addTo(reportsMap.current)
+
+      bounds.extend([lng, lat])
+    })
+
+    if (reportsWithLocation.length > 1) {
+      reportsMap.current.fitBounds(bounds, { padding: 60, maxZoom: 12 })
+    }
+
+    return () => {
+      if (reportsMap.current) {
+        reportsMap.current.remove()
+        reportsMap.current = null
+      }
+    }
+  }, [activeTab, myReports])
 
   const fetchMyReports = async () => {
     setLoadingReports(true)
@@ -73,8 +207,8 @@ export default function NgoStaffDashboard() {
           clearInterval(interval)
           setPolling(false)
           setPolledReport(res.report)
-          setShowChat(true)      // ✅ auto-open chat after analysis
-          setChatMessages([])    // ✅ reset chat for new report
+          setShowChat(true)
+          setChatMessages([])
         }
       } catch (err) {
         console.error(err)
@@ -86,7 +220,6 @@ export default function NgoStaffDashboard() {
     }, 2000)
   }
 
-  // ✅ Chat function — INSIDE component
   const sendChatMessage = async () => {
     if (!chatInput.trim() || !polledReport) return
 
@@ -110,11 +243,6 @@ export default function NgoStaffDashboard() {
           confidence:     res.confidence,
         }
       ])
-
-      // Auto-highlight send button if AI recommends sending
-      if (res.recommendation === 'send' && polledReport.visibility !== 'sent') {
-        console.log('AI recommends sending this report')
-      }
     } catch (err) {
       setChatMessages(prev => [
         ...prev,
@@ -129,10 +257,14 @@ export default function NgoStaffDashboard() {
   const handleUpload = async () => {
     if (!uploadType) return alert('Select upload type')
     if (!title.trim()) return alert('Enter a title')
+    if (!reportLocation) return alert('Select report location on map')
 
     const formData = new FormData()
     formData.append('title', title)
     formData.append('visibility', 'draft')
+    formData.append('latitude', reportLocation.latitude)
+    formData.append('longitude', reportLocation.longitude)
+    formData.append('locationName', locationName)
 
     if (uploadType === 'text') {
       if (!textInput.trim()) return alert('Enter text')
@@ -160,6 +292,34 @@ export default function NgoStaffDashboard() {
     } catch (err) {
       setUploading(false)
       alert('Upload failed: ' + err.message)
+    }
+  }
+
+  const handleSendToCommittee = async (reportId) => {
+    setVisibilityLoading(reportId)
+    try {
+      await uploadApi.updateVisibility(reportId, 'sent')
+      
+      // Update local state
+      if (polledReport?._id === reportId) {
+        setPolledReport(prev => ({ ...prev, visibility: 'sent' }))
+      }
+      if (activeTab === 'reports') {
+        fetchMyReports()
+      } else {
+        setMyReports(prev =>
+          prev.map(r => r._id === reportId ? { ...r, visibility: 'sent' } : r)
+        )
+      }
+      
+      setShowSendConfirm(null)
+      
+      // Show success message
+      alert('✅ Report successfully sent to committee! They will review it soon.')
+    } catch (err) {
+      alert('Failed to send: ' + err.message)
+    } finally {
+      setVisibilityLoading(null)
     }
   }
 
@@ -217,43 +377,86 @@ export default function NgoStaffDashboard() {
     setUploadedReportId(null)
     setShowChat(false)
     setChatMessages([])
+    setReportLocation(null)
+    setLocationName('')
+    setShowLocationPicker(false)
   }
 
   const handleLogout = () => { logout(); navigate('/login') }
   const sev = (l) => SEVERITY_CONFIG[l] || SEVERITY_CONFIG.info
 
+  // Get NGO info from user
+  const ngoName = user?.ngo?.name || 'NGO'
+  const ngoZone = user?.assignedZone?.name || user?.zone?.name || 'Unassigned Zone'
+
   return (
     <div className="min-h-screen bg-gray-50">
 
       {/* Navbar */}
-      <nav className="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-3">
-          <span className="text-3xl">📋</span>
-          <div>
-            <h1 className="font-bold text-gray-800">NGO Staff</h1>
-            <p className="text-xs text-gray-500">{user?.fullName}</p>
+      <nav className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
+              <span className="text-3xl">📋</span>
+              <div>
+                <h1 className="font-bold text-gray-800">NGO Field Staff</h1>
+                <p className="text-xs text-gray-500">{user?.fullName}</p>
+              </div>
+            </div>
+            
+            {/* NGO Badge */}
+            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
+              <span className="text-lg">🏢</span>
+              <div>
+                <p className="text-xs text-blue-600 font-semibold">{ngoName}</p>
+                <p className="text-xs text-blue-500">📍 {ngoZone}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {user?.locationName && (
+              <span className="hidden md:block text-xs text-gray-400">
+                📍 {user.locationName}
+              </span>
+            )}
+            <button onClick={handleLogout}
+              className="text-sm bg-red-50 text-red-600 px-4 py-2 rounded-lg hover:bg-red-100 font-medium">
+              Logout
+            </button>
           </div>
         </div>
-        <button onClick={handleLogout}
-          className="text-sm bg-red-50 text-red-600 px-4 py-2 rounded-lg hover:bg-red-100 font-medium">
-          Logout
-        </button>
+        
+        {/* Mobile NGO Info */}
+        <div className="md:hidden mt-3 flex items-center gap-2 px-3 py-2 bg-blue-50 rounded-lg">
+          <span>🏢</span>
+          <div className="flex-1">
+            <p className="text-xs text-blue-700 font-semibold">{ngoName}</p>
+            <p className="text-xs text-blue-600">Zone: {ngoZone}</p>
+          </div>
+        </div>
       </nav>
 
       {/* Tabs */}
       <div className="bg-white border-b border-gray-200 px-6">
         <div className="flex">
           {[
-            { key: 'upload',  label: '📤 Upload Report' },
-            { key: 'reports', label: '📋 My Reports'    },
+            { key: 'upload',  label: '📤 New Report', icon: '➕' },
+            { key: 'reports', label: '📋 My Reports', badge: myReports.length },
           ].map(t => (
             <button key={t.key} onClick={() => setActiveTab(t.key)}
-              className={activeTab === t.key
-                ? 'px-5 py-3 text-sm font-medium border-b-2 border-blue-600 text-blue-600'
-                : 'px-5 py-3 text-sm font-medium text-gray-500 hover:text-gray-700'
-              }
+              className={`px-5 py-3 text-sm font-medium flex items-center gap-2 ${
+                activeTab === t.key
+                  ? 'border-b-2 border-blue-600 text-blue-600'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
             >
               {t.label}
+              {t.badge > 0 && (
+                <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {t.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -264,6 +467,20 @@ export default function NgoStaffDashboard() {
         {/* ══ UPLOAD TAB ══ */}
         {activeTab === 'upload' && (
           <div className="space-y-5">
+
+            {/* NGO Info Card */}
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-5 text-white">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="text-2xl">🏢</span>
+                <div className="flex-1">
+                  <h3 className="font-bold text-lg">{ngoName}</h3>
+                  <p className="text-blue-100 text-sm">Operating Zone: {ngoZone}</p>
+                </div>
+              </div>
+              <p className="text-blue-100 text-sm">
+                📝 Reports you submit will be reviewed by your committee members
+              </p>
+            </div>
 
             {/* AI Result Card */}
             {polledReport && (
@@ -324,6 +541,17 @@ export default function NgoStaffDashboard() {
                     </div>
                   </div>
 
+                  {/* Location Info */}
+                  {polledReport.locationName && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 flex items-center gap-2">
+                      <span className="text-blue-500 text-xl">📍</span>
+                      <div className="flex-1">
+                        <p className="text-xs font-semibold text-blue-700">Report Location</p>
+                        <p className="text-sm text-blue-600">{polledReport.locationName}</p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Immediate Risk */}
                   {polledReport.analysis?.immediateRisk && (
                     <div className="bg-red-50 border border-red-200 rounded-xl p-3 flex items-center gap-2">
@@ -339,14 +567,6 @@ export default function NgoStaffDashboard() {
                     <p className="text-xs font-semibold text-gray-600 mb-1">🤖 AI Summary</p>
                     <p className="text-sm text-gray-800 leading-relaxed">{polledReport.analysis?.summary}</p>
                   </div>
-
-                  {/* Detailed Analysis */}
-                  {polledReport.analysis?.detailedAnalysis && (
-                    <div className="bg-gray-50 rounded-xl p-4">
-                      <p className="text-xs font-semibold text-gray-600 mb-1">📊 Detailed Analysis</p>
-                      <p className="text-sm text-gray-700 leading-relaxed">{polledReport.analysis.detailedAnalysis}</p>
-                    </div>
-                  )}
 
                   {/* Key Problems */}
                   {polledReport.analysis?.keyProblems?.length > 0 && (
@@ -376,59 +596,62 @@ export default function NgoStaffDashboard() {
                     </div>
                   )}
 
-                  {/* Meta Tags */}
-                  <div className="flex flex-wrap gap-2">
-                    {polledReport.analysis?.keywords?.map(kw => (
-                      <span key={kw} className="bg-blue-50 text-blue-600 text-xs px-2.5 py-1 rounded-full">{kw}</span>
-                    ))}
-                    {polledReport.analysis?.affectedPeople && (
-                      <span className="bg-red-50 text-red-600 text-xs px-2.5 py-1 rounded-full">
-                        👥 ~{polledReport.analysis.affectedPeople} people
-                      </span>
-                    )}
-                    {polledReport.analysis?.affectedArea && (
-                      <span className="bg-purple-50 text-purple-600 text-xs px-2.5 py-1 rounded-full">
-                        📍 {polledReport.analysis.affectedArea}
-                      </span>
-                    )}
-                  </div>
-
                   {/* Send / Draft Decision */}
                   <div className="border-t border-gray-100 pt-4">
-                    <p className="text-sm font-semibold text-gray-700 mb-3">📤 What do you want to do with this report?</p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button
-                        onClick={() => handleVisibility(polledReport._id, 'sent')}
-                        disabled={polledReport.visibility === 'sent' || visibilityLoading === polledReport._id}
-                        className={`py-3 rounded-xl font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
-                          polledReport.visibility === 'sent'
-                            ? 'bg-green-100 text-green-700 border-2 border-green-300 cursor-default'
-                            : 'bg-green-600 text-white hover:bg-green-700'
-                        }`}
-                      >
-                        {polledReport.visibility === 'sent' ? '✅ Sent to Committee' : '📤 Send to Committee'}
-                      </button>
-                      <button
-                        onClick={() => handleVisibility(polledReport._id, 'draft')}
-                        disabled={polledReport.visibility === 'draft' || visibilityLoading === polledReport._id}
-                        className={`py-3 rounded-xl font-semibold text-sm transition-all ${
-                          polledReport.visibility === 'draft'
-                            ? 'bg-gray-100 text-gray-600 border-2 border-gray-300 cursor-default'
-                            : 'bg-gray-600 text-white hover:bg-gray-700'
-                        }`}
-                      >
-                        📝 Keep as Draft
-                      </button>
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 mb-3">
+                      <div className="flex items-start gap-3">
+                        <span className="text-2xl">🏢</span>
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold text-gray-800 mb-1">
+                            Submit to {ngoName} Committee
+                          </p>
+                          <p className="text-xs text-gray-600 leading-relaxed">
+                            Your committee members in <strong>{ngoZone}</strong> will review this report and decide on actions. 
+                            {polledReport.analysis?.urgencyScore >= 75 && (
+                              <span className="text-red-600 font-semibold"> ⚠️ High urgency - recommend sending immediately!</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
                     </div>
-                    {polledReport.visibility === 'sent' && (
-                      <p className="text-xs text-green-600 text-center mt-2">✅ Committee member can now see this report</p>
-                    )}
-                    {polledReport.visibility === 'draft' && (
-                      <p className="text-xs text-gray-500 text-center mt-2">📝 Only you can see this. Send when ready.</p>
+
+                    {polledReport.visibility !== 'sent' ? (
+                      <div className="space-y-3">
+                        <button
+                          onClick={() => setShowSendConfirm(polledReport._id)}
+                          disabled={visibilityLoading === polledReport._id}
+                          className="w-full py-3 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-xl font-semibold text-sm hover:from-green-700 hover:to-green-800 disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                          <span>📤</span>
+                          Send to Committee for Review
+                        </button>
+                        <button
+                          onClick={() => handleVisibility(polledReport._id, 'draft')}
+                          disabled={visibilityLoading === polledReport._id}
+                          className="w-full py-3 bg-gray-100 text-gray-700 rounded-xl font-medium text-sm hover:bg-gray-200 disabled:opacity-50"
+                        >
+                          📝 Keep as Draft (Send Later)
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="bg-green-50 border-2 border-green-300 rounded-xl p-4 text-center">
+                        <div className="text-4xl mb-2">✅</div>
+                        <p className="text-green-800 font-bold mb-1">Report Submitted!</p>
+                        <p className="text-green-600 text-sm">
+                          Committee members can now see this report and will take action
+                        </p>
+                        <button
+                          onClick={() => handleVisibility(polledReport._id, 'draft')}
+                          disabled={visibilityLoading === polledReport._id}
+                          className="mt-3 text-xs text-green-700 hover:underline disabled:opacity-50"
+                        >
+                          ↩️ Move back to draft
+                        </button>
+                      </div>
                     )}
                   </div>
 
-                  {/* ✅ AI Chat Section */}
+                  {/* AI Chat Section */}
                   <div className="border-t border-gray-100 pt-4">
                     <button
                       onClick={() => setShowChat(!showChat)}
@@ -443,8 +666,6 @@ export default function NgoStaffDashboard() {
 
                     {showChat && (
                       <div className="mt-3 border border-indigo-100 rounded-xl overflow-hidden">
-
-                        {/* Chat Messages */}
                         <div className="h-64 overflow-y-auto p-4 space-y-3 bg-gray-50">
                           {chatMessages.length === 0 && (
                             <div className="text-center text-gray-400 text-sm mt-8">
@@ -469,11 +690,6 @@ export default function NgoStaffDashboard() {
                                     Recommendation: {msg.recommendation === 'send' ? '📤 Send it' : '📝 Keep draft'}
                                   </p>
                                 )}
-                                {msg.confidence && (
-                                  <p className="text-xs opacity-60 mt-0.5">
-                                    Confidence: {Math.round(msg.confidence * 100)}%
-                                  </p>
-                                )}
                               </div>
                             </div>
                           ))}
@@ -492,7 +708,6 @@ export default function NgoStaffDashboard() {
                           <div ref={chatEndRef} />
                         </div>
 
-                        {/* Chat Input */}
                         <div className="flex gap-2 p-3 bg-white border-t border-gray-100">
                           <input
                             type="text"
@@ -514,7 +729,6 @@ export default function NgoStaffDashboard() {
                       </div>
                     )}
                   </div>
-
                 </div>
               </div>
             )}
@@ -525,14 +739,6 @@ export default function NgoStaffDashboard() {
                 <div className="animate-spin h-12 w-12 border-4 border-blue-600 border-t-transparent rounded-full mx-auto mb-4" />
                 <p className="font-bold text-blue-800 text-lg">🤖 Gemini AI Analyzing...</p>
                 <p className="text-sm text-blue-600 mt-1">Reading content • Detecting severity • Generating insights</p>
-                <div className="flex justify-center gap-2 mt-4">
-                  {['Extracting text', 'Understanding context', 'Scoring urgency', 'Writing summary'].map((s, i) => (
-                    <span key={s} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded-full animate-pulse"
-                      style={{ animationDelay: `${i * 0.3}s` }}>
-                      {s}
-                    </span>
-                  ))}
-                </div>
               </div>
             )}
 
@@ -545,6 +751,45 @@ export default function NgoStaffDashboard() {
                     placeholder="Brief title of the community issue"
                     className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
+                </div>
+
+                {/* Location Picker */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Report Location * 
+                    <span className="text-xs text-gray-500 ml-1">(Where is this issue happening?)</span>
+                  </label>
+                  
+                  {!reportLocation ? (
+                    <button
+                      onClick={() => setShowLocationPicker(true)}
+                      className="w-full py-3 border-2 border-dashed border-blue-300 rounded-xl text-blue-600 hover:bg-blue-50 flex items-center justify-center gap-2 font-medium"
+                    >
+                      <span>📍</span> Click to select location on map
+                    </button>
+                  ) : (
+                    <div className="bg-green-50 border border-green-200 rounded-xl p-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-1">
+                          <span className="text-green-500 text-xl">✅</span>
+                          <div>
+                            <p className="text-sm font-medium text-green-800">Location Selected</p>
+                            <p className="text-xs text-green-600">{locationName}</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => {
+                            setReportLocation(null)
+                            setLocationName('')
+                            setShowLocationPicker(true)
+                          }}
+                          className="text-xs text-green-700 hover:underline"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -650,9 +895,29 @@ export default function NgoStaffDashboard() {
         {activeTab === 'reports' && (
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-xl font-bold text-gray-800">My Reports ({myReports.length})</h3>
-              <button onClick={fetchMyReports} className="text-xs text-blue-600 hover:underline">Refresh</button>
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">My Reports ({myReports.length})</h3>
+                <p className="text-xs text-gray-500 mt-0.5">Submitted to {ngoName} • {ngoZone}</p>
+              </div>
+              <button onClick={fetchMyReports} className="text-xs text-blue-600 hover:underline">
+                🔄 Refresh
+              </button>
             </div>
+
+            {/* Reports Map */}
+            {myReports.filter(r => r.location?.coordinates).length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
+                <div className="px-6 py-4 border-b border-gray-100">
+                  <h3 className="font-semibold text-gray-800 flex items-center gap-2">
+                    <span>🗺️</span> Reports Map
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    🔴 Critical • 🟠 High • 🟡 Medium • 🟢 Low • ⚪ Info
+                  </p>
+                </div>
+                <div ref={reportsMapContainer} className="w-full h-80" />
+              </div>
+            )}
 
             {loadingReports ? (
               <div className="text-center py-12">
@@ -661,7 +926,14 @@ export default function NgoStaffDashboard() {
             ) : myReports.length === 0 ? (
               <div className="bg-white rounded-2xl p-12 text-center shadow-sm">
                 <p className="text-5xl mb-3">📋</p>
-                <p className="text-gray-500">No reports yet. Upload your first one!</p>
+                <h3 className="text-lg font-semibold text-gray-800">No reports yet</h3>
+                <p className="text-gray-500 text-sm mt-1">Upload your first report to start documenting community issues</p>
+                <button
+                  onClick={() => setActiveTab('upload')}
+                  className="mt-4 bg-blue-600 text-white px-6 py-2.5 rounded-xl text-sm font-medium hover:bg-blue-700"
+                >
+                  ➕ Create First Report
+                </button>
               </div>
             ) : (
               <div className="space-y-4">
@@ -673,20 +945,27 @@ export default function NgoStaffDashboard() {
                       report.analysis?.severityLevel === 'medium'   ? 'border-l-yellow-500' :
                       report.analysis?.severityLevel === 'low'      ? 'border-l-green-500' :
                       'border-l-gray-300'
-                    } overflow-hidden`}
+                    } overflow-hidden hover:shadow-md transition-shadow`}
                   >
                     <div className="p-5">
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1">
                           <h4 className="font-semibold text-gray-800">{report.title}</h4>
-                          <p className="text-xs text-gray-400 mt-0.5">{new Date(report.createdAt).toLocaleString()}</p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="text-xs text-gray-400">{new Date(report.createdAt).toLocaleString()}</p>
+                            {report.locationName && (
+                              <span className="text-xs text-gray-400">• 📍 {report.locationName.split(',')[0]}</span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
                           <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${sev(report.analysis?.severityLevel).bg} ${sev(report.analysis?.severityLevel).text}`}>
                             {sev(report.analysis?.severityLevel).label}
                           </span>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${report.visibility === 'sent' ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-500'}`}>
-                            {report.visibility === 'sent' ? '📤 Sent' : '📝 Draft'}
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            report.visibility === 'sent' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {report.visibility === 'sent' ? '✅ Sent' : '📝 Draft'}
                           </span>
                         </div>
                       </div>
@@ -728,7 +1007,7 @@ export default function NgoStaffDashboard() {
 
                           <div className="flex gap-2 pt-2 border-t border-gray-100">
                             {report.visibility !== 'sent' ? (
-                              <button onClick={() => handleVisibility(report._id, 'sent')}
+                              <button onClick={() => setShowSendConfirm(report._id)}
                                 disabled={visibilityLoading === report._id}
                                 className="flex-1 py-2 bg-green-600 text-white text-xs rounded-lg font-medium hover:bg-green-700 disabled:opacity-50">
                                 {visibilityLoading === report._id ? '...' : '📤 Send to Committee'}
@@ -751,6 +1030,89 @@ export default function NgoStaffDashboard() {
           </div>
         )}
       </div>
+
+      {/* ══ LOCATION PICKER MODAL ══ */}
+      {showLocationPicker && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-gray-100">
+              <h3 className="text-lg font-bold text-gray-800">📍 Select Report Location</h3>
+              <p className="text-sm text-gray-500 mt-0.5">Click on the map where the issue is happening</p>
+            </div>
+
+            <div ref={locationMapContainer} className="w-full h-96" />
+
+            {reportLocation && (
+              <div className="p-4 bg-green-50 border-t border-green-200">
+                <p className="text-sm font-medium text-green-800 mb-1">✅ Location Selected</p>
+                <p className="text-xs text-green-600">{locationName}</p>
+              </div>
+            )}
+
+            <div className="p-6 border-t border-gray-100 flex gap-3">
+              <button
+                onClick={() => {
+                  setShowLocationPicker(false)
+                  if (!reportLocation) {
+                    setLocationName('')
+                  }
+                }}
+                className="flex-1 py-2.5 border-2 border-gray-200 rounded-xl text-gray-600 font-medium hover:border-gray-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => setShowLocationPicker(false)}
+                disabled={!reportLocation}
+                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                Confirm Location
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ SEND CONFIRMATION MODAL ══ */}
+      {showSendConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+            <div className="p-6">
+              <div className="text-center mb-4">
+                <div className="text-5xl mb-3">📤</div>
+                <h3 className="text-lg font-bold text-gray-800">Send Report to Committee?</h3>
+                <p className="text-sm text-gray-600 mt-2">
+                  This report will be visible to committee members in <strong>{ngoZone}</strong> at <strong>{ngoName}</strong>. 
+                  They will review and decide on actions.
+                </p>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-4">
+                <p className="text-xs text-blue-800">
+                  💡 <strong>Tip:</strong> Make sure all details are accurate before sending. 
+                  You can move it back to draft later if needed.
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowSendConfirm(null)}
+                  className="flex-1 py-2.5 border-2 border-gray-200 rounded-xl text-gray-600 font-medium hover:border-gray-300"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleSendToCommittee(showSendConfirm)}
+                  disabled={visibilityLoading === showSendConfirm}
+                  className="flex-1 py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 disabled:opacity-50"
+                >
+                  {visibilityLoading === showSendConfirm ? 'Sending...' : '✅ Confirm & Send'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

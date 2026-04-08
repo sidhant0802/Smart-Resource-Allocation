@@ -8,7 +8,7 @@ connectDB()
 
 const app = express()
 
-// ── CORS ──
+// ── CORS ──────────────────────────────────────────────────────
 app.use(cors({
   origin: [
     'http://localhost:5173',
@@ -25,7 +25,10 @@ app.options('*', cors())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 
-// Health Check
+// ── Static Files ──────────────────────────────────────────────
+app.use('/uploads', express.static('uploads'))
+
+// ── Health Check ──────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
   res.json({
     status:   'OK',
@@ -35,30 +38,20 @@ app.get('/api/health', (req, res) => {
   })
 })
 
-// Routes
-app.use('/api/auth',        require('./routes/auth.routes'))
-app.use('/api/super-admin', require('./routes/superAdmin'))
-app.use('/api/ngo-manager', require('./routes/ngoManager'))
-
-// Serve uploaded files
-app.use('/uploads', express.static('uploads'))
-// Add to routes section:
-app.use('/api/upload',  require('./routes/upload'))
-app.use('/api/reports', require('./routes/report'))
-app.use('/api/chat',    require('./routes/chat'))
-// Routes
+// ── Routes ────────────────────────────────────────────────────
 app.use('/api/auth',        require('./routes/auth.routes'))
 app.use('/api/super-admin', require('./routes/superAdmin'))
 app.use('/api/ngo-manager', require('./routes/ngoManager'))
 app.use('/api/upload',      require('./routes/upload'))
 app.use('/api/reports',     require('./routes/report'))
+app.use('/api/chat',        require('./routes/chat'))   // ✅ chat added once
 
-// 404 Handler
+// ── 404 Handler ───────────────────────────────────────────────
 app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' })
+  res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` })
 })
 
-// Global Error Handler
+// ── Global Error Handler ──────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error('Global Error:', err)
   res.status(err.status || 500).json({

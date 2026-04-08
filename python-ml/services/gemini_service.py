@@ -1,372 +1,188 @@
-# import os
-# import json
-# import time
-# import logging
-# import google.generativeai as genai
-# from typing import Optional
-
-# logger = logging.getLogger(__name__)
-
-# # Configure Gemini
-# genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-# ANALYSIS_PROMPT = """
-# You are an expert NGO field report analyzer specializing in rural India community issues.
-# Analyze the following report with deep understanding of local context.
-
-# REPORT CONTENT:
-# \"\"\"
-# {text}
-# \"\"\"
-
-# ML PRE-ANALYSIS:
-# - Detected Category: {category}
-# - Initial Urgency Score: {ml_score}/100
-# - Detected Keywords: {keywords}
-# - Affected People Estimate: {affected_people}
-# - Immediate Risk: {immediate_risk}
-
-# Based on the report and ML pre-analysis, provide your expert assessment.
-# Return ONLY a valid JSON object:
-
-# {{
-#   "urgency_score": <refined 0-100 score>,
-#   "severity_level": "<critical|high|medium|low|info>",
-#   "summary": "<2-3 sentence clear summary of the main issue and its impact>",
-#   "detailed_analysis": "<comprehensive 4-6 sentence analysis covering: what the problem is, root causes, who is affected and how, health/safety risks, and urgency of intervention>",
-#   "key_problems": [
-#     "<specific problem 1 with details>",
-#     "<specific problem 2>",
-#     "<specific problem 3>"
-#   ],
-#   "suggested_actions": [
-#     "<immediate action needed within 24-48 hours>",
-#     "<short-term action within 1 week>",
-#     "<long-term solution>"
-#   ],
-#   "immediate_risk": <true|false>,
-#   "confidence_score": <0.0-1.0 how confident you are>,
-#   "reasoning": "<1-2 sentences explaining why you gave this score>"
-# }}
-
-# SCORING GUIDE:
-# 80-100 (critical): Immediate life threat - death, epidemic, serious violence, major disaster
-# 60-79 (high): Serious health/safety risk, 100+ people affected, urgent intervention needed
-# 40-59 (medium): Significant problem affecting community, needs attention within a week
-# 20-39 (low): Minor issue, can be addressed in normal schedule
-# 0-19 (info): General information, suggestion, or resolved issue
-
-# Be precise, empathetic, and action-oriented. Return ONLY JSON.
-# """
-
-# CHAT_PROMPT = """
-# You are an intelligent assistant helping an NGO field staff member decide whether to send a community issue report to their committee.
-
-# REPORT DETAILS:
-# Title: {title}
-# Category: {category}
-# Urgency Score: {urgency_score}/100
-# Severity: {severity_level}
-# Summary: {summary}
-# Key Problems: {key_problems}
-# Suggested Actions: {suggested_actions}
-# Immediate Risk: {immediate_risk}
-
-# CONVERSATION HISTORY:
-# {history}
-
-# STAFF MESSAGE: {message}
-
-# Instructions:
-# - Help the staff understand the severity of the report
-# - Answer questions about the report's content
-# - Advise whether to send to committee or keep as draft
-# - Be conversational, empathetic, and clear
-# - For critical/high severity: strongly recommend sending immediately
-# - For medium: recommend sending with context
-# - For low/info: let staff decide, mention it's their choice
-
-# If recommending action, end with one of:
-# [RECOMMEND_SEND] - if you think they should send to committee
-# [RECOMMEND_DRAFT] - if keeping as draft is fine
-# [NEUTRAL] - if no strong recommendation
-
-# Keep response under 150 words. Be helpful and direct.
-# """
-
-# class GeminiService:
-
-#     def __init__(self):
-#         self.model = genai.GenerativeModel('gemini-1.5-flash')
-
-#     async def analyze_report(
-#         self,
-#         text:       str,
-#         ml_results: dict,
-#     ) -> dict:
-#         """Deep analysis with Gemini AI"""
-#         start = time.time()
-
-#         try:
-#             prompt = ANALYSIS_PROMPT.format(
-#                 text=text[:4000],
-#                 # Limit text to avoid token limits
-#                 category=ml_results.get("category", "Other"),
-#                 ml_score=ml_results.get("urgency_score", 0),
-#                 keywords=", ".join(ml_results.get("keywords", [])[:5]),
-#                 affected_people=ml_results.get("affected_people", "unknown"),
-#                 immediate_risk=ml_results.get("immediate_risk", False),
-#             )
-
-#             response = self.model.generate_content(
-#                 prompt,
-#                 generation_config=genai.types.GenerationConfig(
-#                     temperature=0.2,
-#                     # Low temp for consistent analysis
-#                     max_output_tokens=1024,
-#                 ),
-#             )
-
-#             raw = response.text.strip()
-#             # Clean markdown if present
-#             raw = raw.replace("```json", "").replace("```", "").strip()
-
-#             gemini_result = json.loads(raw)
-
-#             # Blend ML score with Gemini score for accuracy
-#             ml_score     = ml_results.get("urgency_score", 0)
-#             gemini_score = float(gemini_result.get("urgency_score", ml_score))
-#             blended_score = round(
-#                 (ml_score * 0.35) + (gemini_score * 0.65),
-#                 1
-#             )
-#             # Gemini gets more weight (65%) as it understands context better
-
-#             # Use blended score to determine severity
-#             if blended_score >= 80:   severity = "critical"
-#             elif blended_score >= 60: severity = "high"
-#             elif blended_score >= 40: severity = "medium"
-#             elif blended_score >= 20: severity = "low"
-#             else:                     severity = "info"
-
-#             return {
-#                 "urgency_score":     blended_score,
-#                 "severity_level":    severity,
-#                 "summary":           gemini_result.get("summary", ""),
-#                 "detailed_analysis": gemini_result.get("detailed_analysis", ""),
-#                 "key_problems":      gemini_result.get("key_problems", []),
-#                 "suggested_actions": gemini_result.get("suggested_actions", []),
-#                 "immediate_risk":    gemini_result.get("immediate_risk", False),
-#                 "confidence_score":  float(gemini_result.get("confidence_score", 0.8)),
-#                 "reasoning":         gemini_result.get("reasoning", ""),
-#                 "processing_time":   round(time.time() - start, 3),
-#                 "model_used":        "gemini-1.5-flash + ml-pipeline",
-#                 "success":           True,
-#             }
-
-#         except json.JSONDecodeError as e:
-#             logger.error(f"JSON parse error: {e}")
-#             logger.error(f"Raw response: {raw}")
-#             return self._fallback(ml_results, start)
-
-#         except Exception as e:
-#             logger.error(f"Gemini error: {e}")
-#             return self._fallback(ml_results, start)
-
-#     def _fallback(self, ml_results: dict, start: float) -> dict:
-#         """Use ML results if Gemini fails"""
-#         score    = ml_results.get("urgency_score", 0)
-#         severity = ml_results.get("severity_level", "info")
-
-#         return {
-#             "urgency_score":     score,
-#             "severity_level":    severity,
-#             "summary":           f"Report analyzed. Category: {ml_results.get('category')}. Score: {score}/100.",
-#             "detailed_analysis": ml_results.get("explanation", ""),
-#             "key_problems":      [],
-#             "suggested_actions": ["Review report manually", "Assess urgency"],
-#             "immediate_risk":    ml_results.get("immediate_risk", False),
-#             "confidence_score":  0.5,
-#             "reasoning":         "Analysis done using ML pipeline (AI unavailable)",
-#             "processing_time":   round(time.time() - start, 3),
-#             "model_used":        "ml-pipeline-fallback",
-#             "success":           True,
-#         }
-
-#     async def chat(
-#         self,
-#         message:     str,
-#         report_data: dict,
-#         history:     list,
-#     ) -> dict:
-#         """Chat with AI about the report"""
-#         try:
-#             # Format history
-#             formatted_history = ""
-#             for msg in history[-6:]:
-#                 # Last 6 messages for context
-#                 role    = "Staff" if msg.get("role") == "user" else "AI"
-#                 content = msg.get("content", "")
-#                 formatted_history += f"{role}: {content}\n"
-
-#             analysis = report_data.get("analysis", {})
-
-#             prompt = CHAT_PROMPT.format(
-#                 title=report_data.get("title", "Unknown"),
-#                 category=analysis.get("category", "Unknown"),
-#                 urgency_score=analysis.get("urgencyScore", 0),
-#                 severity_level=analysis.get("severityLevel", "info"),
-#                 summary=analysis.get("summary", "No summary"),
-#                 key_problems="; ".join(
-#                     analysis.get("keyProblems", [])[:3]
-#                 ),
-#                 suggested_actions="; ".join(
-#                     analysis.get("suggestedActions", [])[:2]
-#                 ),
-#                 immediate_risk=analysis.get("immediateRisk", False),
-#                 history=formatted_history or "No previous messages",
-#                 message=message,
-#             )
-
-#             response = self.model.generate_content(
-#                 prompt,
-#                 generation_config=genai.types.GenerationConfig(
-#                     temperature=0.7,
-#                     max_output_tokens=256,
-#                 ),
-#             )
-
-#             ai_message = response.text.strip()
-
-#             # Extract recommendation
-#             recommendation = "neutral"
-#             if "[RECOMMEND_SEND]" in ai_message:
-#                 recommendation = "send"
-#                 ai_message     = ai_message.replace("[RECOMMEND_SEND]", "").strip()
-#             elif "[RECOMMEND_DRAFT]" in ai_message:
-#                 recommendation = "draft"
-#                 ai_message     = ai_message.replace("[RECOMMEND_DRAFT]", "").strip()
-#             elif "[NEUTRAL]" in ai_message:
-#                 ai_message = ai_message.replace("[NEUTRAL]", "").strip()
-
-#             # Auto-set confidence based on severity
-#             severity   = analysis.get("severityLevel", "info")
-#             confidence = {
-#                 "critical": 0.95,
-#                 "high":     0.85,
-#                 "medium":   0.70,
-#                 "low":      0.55,
-#                 "info":     0.40,
-#             }.get(severity, 0.60)
-
-#             return {
-#                 "message":        ai_message,
-#                 "recommendation": recommendation,
-#                 "confidence":     confidence,
-#                 "success":        True,
-#             }
-
-#         except Exception as e:
-#             logger.error(f"Chat error: {e}")
-#             return {
-#                 "message":        "I'm having trouble analyzing this right now. Please review the urgency score and decide based on your field experience.",
-#                 "recommendation": "neutral",
-#                 "confidence":     0.5,
-#                 "success":        False,
-#             }
-
-# # Singleton
-# gemini_service = GeminiService()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import os
 import logging
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from typing import Optional
+import json
 
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-# ── Chat Prompt ───────────────────────────────────────────────
+# ── Enhanced Chat Prompt ───────────────────────────────────────────────
 CHAT_PROMPT = """
-You are an expert NGO field assistant helping a staff member understand a community issue report and decide whether to submit it to their committee.
+You are an expert NGO field assistant AI helping a staff member understand a community issue report.
+
+CONTEXT:
+You are having a conversation with an NGO field worker who just documented a community issue. 
+They need your help to understand the severity and decide whether to submit it to their committee.
 
 REPORT DETAILS:
-Title:         {title}
-Category:      {category}
-Urgency Score: {urgency_score}/100
-Severity:      {severity_level}
-Summary:       {summary}
-Key Problems:  {key_problems}
-Suggested Actions: {suggested_actions}
-Immediate Risk: {immediate_risk}
-Affected People: {affected_people}
-Affected Area:  {affected_area}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Title:            {title}
+Category:         {category}
+Urgency Score:    {urgency_score}/100
+Severity:         {severity_level}
+Location:         {affected_area}
+
+ANALYSIS SUMMARY:
+{summary}
+
+KEY PROBLEMS IDENTIFIED:
+{key_problems}
+
+RECOMMENDED ACTIONS:
+{suggested_actions}
+
+RISK ASSESSMENT:
+- Immediate Risk: {immediate_risk}
+- Affected People: {affected_people}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 FULL REPORT TEXT:
 \"\"\"
 {report_text}
 \"\"\"
 
-CONVERSATION SO FAR:
+CONVERSATION HISTORY:
 {history}
 
-STAFF QUESTION: {message}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CURRENT QUESTION FROM STAFF: "{message}"
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Your job:
-1. Give a DETAILED, helpful response (150-250 words)
-2. Reference specific details from the report
-3. Explain the severity clearly in simple language
-4. Give a clear recommendation on whether to submit or keep as draft
-5. If asked for summary — give a LONG, detailed summary covering: what happened, who is affected, where, health/safety risks, and what action is needed
-6. Be empathetic, clear, and action-oriented
-7. Use simple English that field staff can understand
+INSTRUCTIONS FOR YOUR RESPONSE:
 
-Scoring guide for your recommendation:
-- 80-100: ALWAYS recommend sending immediately
-- 60-79:  Strongly recommend sending within 24 hours
-- 40-59:  Recommend sending this week
-- 20-39:  Staff can decide, low urgency
-- 0-19:   Keep as draft unless staff wants to share
+1. **ANALYZE THE QUESTION**: 
+   - What specifically are they asking about?
+   - Are they asking about severity, urgency, actions, or decision to send?
+   - Do they need clarification, reassurance, or guidance?
 
-End your response with exactly ONE of these tags on a new line:
+2. **PROVIDE CONTEXT-SPECIFIC ANSWER** (150-300 words):
+   - If asking "Should I send?": Give detailed reasoning based on urgency score and severity
+   - If asking "How urgent?": Explain timeline, risks, and what could happen if delayed
+   - If asking "What happened?": Provide detailed summary with key facts
+   - If asking about actions: Explain suggested steps in practical terms
+   - If expressing doubt/concern: Be empathetic and provide reassurance with facts
+   - If asking about specific aspect: Deep-dive into that particular issue
+
+3. **USE CONVERSATIONAL, EMPATHETIC TONE**:
+   - Acknowledge their concern
+   - Use simple language (imagine explaining to a non-technical person)
+   - Be supportive but honest about severity
+   - Reference specific details from THEIR report
+
+4. **PROVIDE CLEAR RECOMMENDATION**:
+   Based on urgency score:
+   - 80-100: "SEND IMMEDIATELY - This is critical and requires urgent committee attention"
+   - 60-79:  "SEND SOON - This should reach the committee within 24 hours"
+   - 40-59:  "SEND THIS WEEK - Important but not immediately critical"
+   - 20-39:  "YOUR CALL - Low urgency, you can decide timing"
+   - 0-19:   "CAN WAIT - Keep as draft unless situation worsens"
+
+5. **VARY YOUR RESPONSE STYLE**:
+   - Don't repeat the same phrases
+   - Match your tone to their question
+   - If they're worried, be more reassuring
+   - If they're uncertain, be more directive
+   - If they're asking for details, be more analytical
+
+6. **END WITH ACTION GUIDANCE**:
+   Based on the question, suggest next steps
+
+CRITICAL: End your response with EXACTLY ONE of these tags on a new line:
 [RECOMMEND_SEND]
 [RECOMMEND_DRAFT]
 [NEUTRAL]
+
+Choose based on:
+- [RECOMMEND_SEND]: If urgency ≥ 60 OR immediate risk = true
+- [RECOMMEND_DRAFT]: If urgency < 30 AND no immediate risk
+- [NEUTRAL]: For informational questions or middle-ground cases (30-59)
 """
+
+# ── System prompt for better context understanding ───────────────────────
+SYSTEM_INSTRUCTION = """
+You are a compassionate, knowledgeable NGO field assistant AI. Your role is to:
+- Help field workers understand the impact of community issues they document
+- Provide clear, actionable guidance on whether reports should be escalated
+- Explain complex analysis results in simple, human terms
+- Be supportive and empathetic while maintaining professional accuracy
+- Adapt your communication style to the specific question being asked
+
+Remember: Each question is unique. Think about what the person REALLY needs to know, not just what they asked.
+"""
+
+
+# services/gemini_service.py
 
 class GeminiService:
 
     def __init__(self):
         try:
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
-            logger.info("✅ Gemini initialized for chat")
+            # NEW: Initialize the Gemini client
+            self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+            self.model_name = 'gemini-2.0-flash-exp'  # ✅ Updated model name
+            logger.info("✅ Gemini initialized for chat (new google.genai)")
         except Exception as e:
             logger.error(f"Gemini init failed: {e}")
-            self.model = None
+            self.client = None
+
+    def _extract_report_fields(self, report_data: dict) -> dict:
+        """
+        Extract fields from report_data.
+        Handles BOTH camelCase (from Node.js) and snake_case.
+        """
+        analysis = report_data.get("analysis", {})
+
+        def get(camel, snake, default=None):
+            return (
+                analysis.get(camel) or
+                analysis.get(snake) or
+                report_data.get(camel) or
+                report_data.get(snake) or
+                default
+            )
+
+        urgency_score = get("urgencyScore",     "urgency_score",     0)
+        severity      = get("severityLevel",    "severity_level",    "info")
+        category      = get("category",         "category",          "Unknown")
+        summary       = get("summary",          "summary",           "No summary available")
+        key_problems  = get("keyProblems",      "key_problems",      []) or []
+        suggested     = get("suggestedActions", "suggested_actions", []) or []
+        immediate     = get("immediateRisk",    "immediate_risk",    False)
+        people        = get("affectedPeople",   "affected_people",   "Unknown")
+        area          = get("affectedArea",     "affected_area",     "Unknown")
+        orig_text     = (
+            report_data.get("originalText") or
+            report_data.get("original_text") or
+            ""
+        )
+
+        return {
+            "title":             report_data.get("title", "Untitled Report"),
+            "urgency_score":     urgency_score,
+            "severity_level":    severity,
+            "category":          category,
+            "summary":           summary,
+            "key_problems":      key_problems,
+            "suggested_actions": suggested,
+            "immediate_risk":    immediate,
+            "affected_people":   people,
+            "affected_area":     area,
+            "original_text":     orig_text,
+        }
+
+    def _format_conversation_history(self, history: list) -> str:
+        """Format conversation history with better context"""
+        if not history:
+            return "This is the first message in the conversation."
+        
+        formatted = []
+        for i, msg in enumerate(history[-6:], 1):  # Last 6 messages for context
+            role = "Staff Member" if msg.get("role") == "user" else "AI Assistant"
+            content = msg.get("content", "").strip()
+            formatted.append(f"{i}. {role}: {content}")
+        
+        return "\n".join(formatted)
 
     async def chat(
         self,
@@ -376,44 +192,62 @@ class GeminiService:
     ) -> dict:
         """
         Chat with Gemini about the report.
-        Gemini is ONLY used here — not for analysis.
+        Uses advanced prompting for context-aware responses.
         """
-        if not self.model:
-            return self._fallback_chat(report_data)
+        if not self.client:
+            return self._fallback_chat(report_data, message)
 
         try:
-            # Format conversation history
-            formatted_history = ""
-            for msg in history[-8:]:
-                role    = "Staff" if msg.get("role") == "user" else "Assistant"
-                content = msg.get("content", "")
-                formatted_history += f"{role}: {content}\n"
+            # Extract fields
+            fields = self._extract_report_fields(report_data)
 
-            if not formatted_history:
-                formatted_history = "No previous messages"
+            # Format conversation history with context
+            formatted_history = self._format_conversation_history(history)
 
-            # Build prompt with full report context
+            # Format lists with better presentation
+            key_problems_str = ""
+            if fields["key_problems"]:
+                problems = fields["key_problems"][:5]
+                key_problems_str = "\n".join([f"  • {p}" for p in problems])
+            else:
+                key_problems_str = "  • No specific problems identified"
+
+            suggested_str = ""
+            if fields["suggested_actions"]:
+                actions = fields["suggested_actions"][:4]
+                suggested_str = "\n".join([f"  → {a}" for a in actions])
+            else:
+                suggested_str = "  → Requires committee review for action planning"
+
+            # Risk indicator
+            risk_emoji = "🔴 YES - Requires immediate attention" if fields["immediate_risk"] else "🟢 NO - Situation is stable"
+
             prompt = CHAT_PROMPT.format(
-                title=report_data.get("title", "Untitled Report"),
-                category=report_data.get("severity_level", report_data.get("category", "Unknown")),
-                urgency_score=report_data.get("urgency_score", 0),
-                severity_level=report_data.get("severity_level", "info"),
-                summary=report_data.get("summary", "No summary available"),
-                key_problems="\n- ".join(report_data.get("key_problems", []) or ["Not specified"]),
-                suggested_actions="\n- ".join(report_data.get("suggested_actions", []) or ["Review manually"]),
-                immediate_risk=report_data.get("immediate_risk", False),
-                affected_people=report_data.get("affected_people", "Unknown"),
-                affected_area=report_data.get("affected_area", "Unknown"),
-                report_text=report_data.get("original_text", "")[:3000],
-                history=formatted_history,
-                message=message,
+                title             = fields["title"],
+                category          = fields["category"],
+                urgency_score     = fields["urgency_score"],
+                severity_level    = fields["severity_level"].upper(),
+                summary           = fields["summary"],
+                key_problems      = key_problems_str,
+                suggested_actions = suggested_str,
+                immediate_risk    = risk_emoji,
+                affected_people   = fields["affected_people"],
+                affected_area     = fields["affected_area"],
+                report_text       = str(fields["original_text"])[:3500],
+                history           = formatted_history,
+                message           = message,
             )
 
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.6,
-                    max_output_tokens=512,
+            # Use new API with system instruction
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.8,  # Higher for more varied responses
+                    max_output_tokens=800,
+                    top_p=0.95,
+                    top_k=40,
+                    system_instruction=SYSTEM_INSTRUCTION,
                 ),
             )
 
@@ -428,15 +262,30 @@ class GeminiService:
                 recommendation = "draft"
                 ai_message     = ai_message.replace("[RECOMMEND_DRAFT]", "").strip()
             elif "[NEUTRAL]" in ai_message:
-                ai_message = ai_message.replace("[NEUTRAL]", "").strip()
+                recommendation = "neutral"
+                ai_message     = ai_message.replace("[NEUTRAL]", "").strip()
 
-            # Confidence based on urgency score
-            score = report_data.get("urgency_score", 0)
-            if score >= 80:   confidence = 0.95
-            elif score >= 60: confidence = 0.85
-            elif score >= 40: confidence = 0.70
-            elif score >= 20: confidence = 0.55
-            else:             confidence = 0.40
+            # Dynamic confidence based on multiple factors
+            score = float(fields["urgency_score"] or 0)
+            has_immediate_risk = fields["immediate_risk"]
+            
+            if has_immediate_risk:
+                confidence = 0.98  # Very high if immediate risk
+            elif score >= 80:
+                confidence = 0.95
+            elif score >= 60:
+                confidence = 0.88
+            elif score >= 40:
+                confidence = 0.72
+            elif score >= 20:
+                confidence = 0.58
+            else:
+                confidence = 0.42
+
+            logger.info(
+                f"✅ Chat response | question_len={len(message)} | "
+                f"rec={recommendation} | conf={confidence:.2f} | score={score}"
+            )
 
             return {
                 "message":        ai_message,
@@ -446,40 +295,124 @@ class GeminiService:
             }
 
         except Exception as e:
-            logger.error(f"Gemini chat error: {e}")
-            return self._fallback_chat(report_data)
+            logger.error(f"Gemini chat error: {e}", exc_info=True)
+            return self._fallback_chat(report_data, message)
 
-    def _fallback_chat(self, report_data: dict) -> dict:
-        """Fallback when Gemini is unavailable"""
-        score    = report_data.get("urgency_score", 0)
-        severity = report_data.get("severity_level", "info")
-        category = report_data.get("category", "Unknown")
+    def _fallback_chat(self, report_data: dict, message: str) -> dict:
+        """Enhanced fallback with context-aware responses"""
+        fields   = self._extract_report_fields(report_data)
+        score    = float(fields["urgency_score"] or 0)
+        severity = fields["severity_level"]
+        category = fields["category"]
+        summary  = fields["summary"]
+        
+        # Detect question type
+        msg_lower = message.lower()
+        is_send_question = any(word in msg_lower for word in ['send', 'submit', 'committee', 'should i'])
+        is_urgency_question = any(word in msg_lower for word in ['urgent', 'how bad', 'serious', 'critical'])
+        is_summary_question = any(word in msg_lower for word in ['what', 'summary', 'happened', 'explain'])
 
-        if score >= 70:
-            msg  = (
-                f"This is a {severity.upper()} severity {category} report "
-                f"with urgency score {score}/100. "
-                f"Based on the analysis, I strongly recommend sending this to "
-                f"the committee immediately. The situation requires urgent attention."
+        # Generate contextual response
+        if is_send_question:
+            if score >= 70:
+                msg = (
+                    f"Yes, I recommend sending this report to your committee right away. "
+                    f"Here's why:\n\n"
+                    f"This is a **{severity.upper()}** severity {category} issue with an urgency score of {score}/100. "
+                    f"{summary}\n\n"
+                    f"The high urgency score indicates this situation needs prompt attention from your committee. "
+                    f"Delaying could allow the problem to worsen or affect more people. "
+                    f"Your field assessment is valuable, and the committee should see this as soon as possible."
+                )
+                rec  = "send"
+                conf = 0.90
+            elif score >= 40:
+                msg = (
+                    f"I would recommend sending this report to your committee, though it's not extremely urgent. "
+                    f"Let me explain:\n\n"
+                    f"This is classified as **{severity.upper()}** severity ({category}) with an urgency score of {score}/100. "
+                    f"{summary}\n\n"
+                    f"While not critical, this issue deserves committee attention within the next 24-48 hours. "
+                    f"They can assess resource allocation and plan appropriate interventions. "
+                    f"Your documentation helps them make informed decisions."
+                )
+                rec  = "send"
+                conf = 0.75
+            else:
+                msg = (
+                    f"Based on the analysis, this report has lower urgency (score: {score}/100, {severity} severity). "
+                    f"You have flexibility in timing:\n\n"
+                    f"{summary}\n\n"
+                    f"You can keep this as a draft and send it when convenient, or if you notice the situation "
+                    f"changing. However, if you feel from your field experience that it needs attention sooner, "
+                    f"trust your judgment — you know the community best."
+                )
+                rec  = "draft"
+                conf = 0.55
+
+        elif is_urgency_question:
+            if score >= 70:
+                msg = (
+                    f"This is quite urgent. The urgency score of {score}/100 indicates **{severity.upper()}** severity.\n\n"
+                    f"What this means:\n"
+                    f"• The issue could worsen if not addressed soon\n"
+                    f"• Affected people: {fields['affected_people']}\n"
+                    f"• Location: {fields['affected_area']}\n\n"
+                    f"{summary}\n\n"
+                    f"I recommend getting this to your committee within the next few hours so they can mobilize resources."
+                )
+                rec = "send"
+                conf = 0.92
+            else:
+                msg = (
+                    f"The urgency level is moderate (score: {score}/100, {severity} severity).\n\n"
+                    f"This means:\n"
+                    f"• The situation is concerning but not immediately critical\n"
+                    f"• You have time to document thoroughly before sending\n"
+                    f"• Committee can plan response over next few days\n\n"
+                    f"{summary}\n\n"
+                    f"Keep monitoring the situation and send when you're confident in the documentation."
+                )
+                rec = "neutral"
+                conf = 0.68
+
+        elif is_summary_question:
+            problems_text = "\n• ".join(fields["key_problems"][:3]) if fields["key_problems"] else "See full report for details"
+            actions_text = "\n→ ".join(fields["suggested_actions"][:3]) if fields["suggested_actions"] else "Requires committee review"
+            
+            msg = (
+                f"Here's what your report documented:\n\n"
+                f"**Issue:** {fields['title']}\n"
+                f"**Category:** {category}\n"
+                f"**Location:** {fields['affected_area']}\n"
+                f"**Affected People:** {fields['affected_people']}\n\n"
+                f"**Summary:**\n{summary}\n\n"
+                f"**Main Problems:**\n• {problems_text}\n\n"
+                f"**Suggested Actions:**\n→ {actions_text}\n\n"
+                f"**Severity Assessment:** {severity.upper()} (urgency score: {score}/100)\n\n"
+                f"{'⚠️ This requires prompt attention.' if score >= 60 else 'This should be reviewed when convenient.'}"
             )
-            rec  = "send"
-            conf = 0.90
-        elif score >= 40:
-            msg  = (
-                f"This report has a {severity} severity level (score: {score}/100). "
-                f"It is a {category} issue that should be reviewed by the committee. "
-                f"I recommend submitting it for review within the next 24-48 hours."
-            )
-            rec  = "send"
-            conf = 0.70
+            rec = "send" if score >= 60 else "neutral"
+            conf = 0.80
+
         else:
-            msg  = (
-                f"This report has a low urgency score of {score}/100. "
-                f"You can keep it as a draft for now and submit when ready. "
-                f"Use your field judgment to decide the right time."
+            # Generic helpful response
+            msg = (
+                f"I'm here to help you understand this report about {category} issues.\n\n"
+                f"**Quick Overview:**\n"
+                f"• Severity: {severity.upper()}\n"
+                f"• Urgency Score: {score}/100\n"
+                f"• Location: {fields['affected_area']}\n\n"
+                f"{summary}\n\n"
+                f"You can ask me:\n"
+                f"• Should I send this to the committee?\n"
+                f"• How urgent is this situation?\n"
+                f"• What are the main problems?\n"
+                f"• What actions are recommended?\n\n"
+                f"What would you like to know?"
             )
-            rec  = "draft"
-            conf = 0.50
+            rec = "neutral"
+            conf = 0.65
 
         return {
             "message":        msg,
@@ -489,5 +422,5 @@ class GeminiService:
         }
 
 
-# Singleton
+# ✅ Singleton
 gemini_service = GeminiService()

@@ -1,7 +1,8 @@
+# services/ml/text_summarizer.py
 import re
 import logging
 from typing import List, Tuple, Optional
-from .context_checker import ContextChecker
+from .context_checker import AdvancedContextChecker  # ✅ Updated import
 from .scorer import SEVERITY_KEYWORDS
 
 logger = logging.getLogger(__name__)
@@ -28,10 +29,14 @@ class TextSummarizer:
         s_lower = sentence.lower()
 
         for level, data in SEVERITY_KEYWORDS.items():
-            for word in data["words"]:
+            # Handle both old and new keyword structure
+            keywords = data.get("keywords", data.get("words", []))
+            for word in keywords:
                 if word in s_lower:
-                    if not ContextChecker.is_false_positive(sentence, word):
-                        score += data["base_weight"]
+                    # Use AdvancedContextChecker instead of ContextChecker
+                    is_fp, _ = AdvancedContextChecker.is_false_positive(sentence, word)
+                    if not is_fp:
+                        score += data.get("base_weight", data.get("weight", 10))
 
         # Boost sentences with numbers (more specific = more relevant)
         if re.search(r'\d+', sentence):
@@ -138,12 +143,12 @@ class TextSummarizer:
         area_str   = f" in {affected_area}" if affected_area else ""
 
         intro = (
-            f"ML Pipeline Analysis Report: This is a {severity} severity "
+            f"Advanced ML Pipeline Analysis: This is a {severity} severity "
             f"{category.lower()} situation{area_str}{people_str}. "
-            f"The analysis pipeline assigned an urgency score of "
-            f"{urgency_score}/100 based on context-aware keyword detection, "
-            f"sentiment analysis ({sentiment}), category classification, "
-            f"and impact assessment."
+            f"The enhanced analysis pipeline assigned an urgency score of "
+            f"{urgency_score}/100 using context-aware verification, "
+            f"multi-factor sentiment analysis ({sentiment}), evidence-based scoring, "
+            f"and comprehensive impact assessment."
         )
 
         # Key findings from report
@@ -151,7 +156,7 @@ class TextSummarizer:
         if key_sentences:
             extracted = [s[1] for s in key_sentences]
             findings = (
-                " Key findings from the report: "
+                " Verified findings from field report: "
                 + " | ".join(extracted[:3])[:400]
                 + "."
             )
@@ -160,30 +165,40 @@ class TextSummarizer:
         kw_analysis = ""
         if matched_keywords:
             kw_analysis = (
-                f" Severity indicators detected: "
+                f" Context-verified severity indicators: "
                 f"{', '.join(matched_keywords[:5])}."
             )
 
         # Recommendation
         if immediate_risk:
             recommendation = (
-                " RECOMMENDATION: This report requires immediate escalation "
-                "to the committee. Do not delay submission."
+                " 🚨 CRITICAL RECOMMENDATION: This report requires immediate escalation "
+                "to the committee with highest priority. Evidence suggests active emergency situation."
             )
-        elif severity in ["high", "medium"]:
+        elif severity == "critical":
             recommendation = (
-                " RECOMMENDATION: This report should be submitted to "
-                "the committee within 24-48 hours for review."
+                " ⚠️ URGENT RECOMMENDATION: Submit to committee immediately. "
+                "Severity indicators require rapid response within hours."
+            )
+        elif severity == "high":
+            recommendation = (
+                " 🔴 RECOMMENDATION: Priority submission to committee within 24 hours. "
+                "Situation requires prompt attention to prevent escalation."
+            )
+        elif severity == "medium":
+            recommendation = (
+                " 🟡 RECOMMENDATION: Submit for committee review within 48-72 hours. "
+                "Monitor for changes and document additional evidence."
             )
         else:
             recommendation = (
-                " RECOMMENDATION: This report can be reviewed in "
-                "the next regular committee meeting."
+                " 🟢 RECOMMENDATION: Include in regular committee reporting cycle. "
+                "Continue monitoring and update if situation changes."
             )
 
         full = intro + findings + kw_analysis + recommendation
 
-        return full[:1000]
+        return full[:1200]
 
     @classmethod
     def generate_key_problems(
