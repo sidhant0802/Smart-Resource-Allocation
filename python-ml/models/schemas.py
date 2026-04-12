@@ -8,10 +8,11 @@ class AnalysisRequest(BaseModel):
     report_id:   str
     extra_context: Optional[str] = None
 
+
 class ChatRequest(BaseModel):
     report_id:   str
     message:     str
-    report_data: Optional[dict] = None
+    report_data: Optional[dict] = {}
     history:     Optional[List[dict]] = []
 
 class AnalysisResult(BaseModel):

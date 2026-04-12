@@ -4,11 +4,11 @@ const controller = require('../controllers/auth.controller')
 const { protect } = require('../middleware/auth.middleware')
 
 // Public routes
-router.post('/signup',       controller.signup)
-router.post('/login',        controller.login)
-router.get('/ngos/approved', controller.getApprovedNgos)
+router.post('/register',      controller.register)
+router.post('/login',         controller.login)
+router.get('/approved-ngos',  controller.getApprovedNgos)
 
-// Protected routes
+// Protected
 router.get('/me', protect, controller.getMe)
 
 module.exports = router

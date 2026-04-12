@@ -9,34 +9,35 @@ const ngoSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      trim: true,
+      default: '',
     },
     website: {
       type: String,
-      trim: true,
+      default: '',
     },
     contactEmail: {
-      type: String,
-      trim: true,
-    },
-    contactPhone: {
-      type: String,
-      trim: true,
+      type:      String,
+      lowercase: true,
+      trim:      true,
     },
 
+    // Who manages this NGO
+    managedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref:  'User',
+    },
+
+    // Approval status
     status: {
       type:    String,
       enum:    ['pending', 'approved', 'declined', 'suspended'],
       default: 'pending',
     },
 
-    approvedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    approvedAt:    Date,
+    // Decline / Suspend reason
     declineReason: String,
 
-    managedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-
-    // ── Fixed location field ──
+    // Location
     location: {
       type: {
         type:    String,
@@ -50,14 +51,20 @@ const ngoSchema = new mongoose.Schema(
     },
     locationName: String,
 
-    totalZones:      { type: Number, default: 0 },
-    totalVolunteers: { type: Number, default: 0 },
-    totalTasksDone:  { type: Number, default: 0 },
+    // Metadata
+    approvedAt:  Date,
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref:  'User',
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+  }
 )
 
 // Geospatial index
 ngoSchema.index({ location: '2dsphere' })
+ngoSchema.index({ status: 1 })
 
 module.exports = mongoose.model('NGO', ngoSchema)

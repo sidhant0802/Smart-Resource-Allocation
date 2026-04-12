@@ -7,24 +7,24 @@ import {
 } from 'react'
 import { authApi } from '../api/authApi'
 
-// Role → Dashboard path mapping
+// ✅ Must be exported with 'export const'
 export const ROLE_PATHS = {
-  super_admin:      '/dashboard/super-admin',
-  ngo_manager:      '/dashboard/ngo-manager',
+  super_admin: '/dashboard/super-admin',
+  ngo_manager: '/dashboard/ngo-manager',
   committee_member: '/dashboard/committee',
-  ngo_staff:        '/dashboard/staff',
-  volunteer:        '/dashboard/volunteer',
+  ngo_staff: '/dashboard/staff',
+  volunteer: '/dashboard/volunteer',
 }
 
 const AuthContext = createContext(null)
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null)
+  const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const restoreSession = async () => {
-      const token    = localStorage.getItem('token')
+      const token = localStorage.getItem('token')
       const userData = localStorage.getItem('user')
 
       if (token && userData) {
@@ -57,9 +57,23 @@ export function AuthProvider({ children }) {
     setUser(null)
   }, [])
 
+  const updateUser = useCallback((updatedData) => {
+    setUser(prev => {
+      if (!prev) return prev
+      const newUser = {
+        ...prev,
+        ...updatedData,
+        role: updatedData.role || prev.role,
+        status: updatedData.status || prev.status,
+      }
+      localStorage.setItem('user', JSON.stringify(newUser))
+      return newUser
+    })
+  }, [])
+
   const getDashboardPath = useCallback(() => {
     if (!user) return '/login'
-    return ROLE_PATHS[user.role] || '/login'
+    return ROLE_PATHS[user.role] || ROLE_PATHS[user.roleName] || '/login'
   }, [user])
 
   return (
@@ -68,6 +82,7 @@ export function AuthProvider({ children }) {
       loading,
       login,
       logout,
+      updateUser,
       getDashboardPath,
       isAuthenticated: !!user,
     }}>

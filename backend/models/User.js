@@ -21,7 +21,6 @@ const userSchema = new mongoose.Schema(
       required: [true, 'Password is required'],
       minlength: [6, 'Password must be at least 6 characters'],
       select:   false,
-      // select: false means password won't be returned in queries
     },
 
     // ── ROLE ────────────────────────────────────
@@ -55,10 +54,30 @@ const userSchema = new mongoose.Schema(
     profileImage: String,
 
     // ── ORGANIZATION LINKS ───────────────────────
+    // Primary NGO (the one staff signed up with)
     ngo: {
       type: mongoose.Schema.Types.ObjectId,
       ref:  'NGO',
     },
+
+    // ✅ NEW: All NGOs this user can submit reports to
+    approvedNgos: [
+      {
+        ngoId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'NGO',
+        },
+        approvedAt: {
+          type: Date,
+          default: Date.now,
+        },
+        approvedBy: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+        }
+      }
+    ],
+
     zone: {
       type: mongoose.Schema.Types.ObjectId,
       ref:  'Zone',
@@ -74,14 +93,12 @@ const userSchema = new mongoose.Schema(
       coordinates: {
         type:    [Number],
         default: [0, 0],
-        // [longitude, latitude] — Mapbox/GeoJSON order
       },
     },
     locationName:    String,
     operatingRadius: {
       type:    Number,
       default: 10,
-      // km
     },
 
     // ── ACCOUNT STATUS ───────────────────────────
@@ -151,7 +168,6 @@ const userSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-    // Add virtual fields to JSON output
     toJSON:   { virtuals: true },
     toObject: { virtuals: true },
   }
@@ -159,7 +175,6 @@ const userSchema = new mongoose.Schema(
 
 // ── INDEXES ─────────────────────────────────────────────────
 userSchema.index({ location: '2dsphere' })
-// Enables geospatial queries (find volunteers near a point)
 userSchema.index({ email: 1 })
 userSchema.index({ roleName: 1 })
 userSchema.index({ ngo: 1 })
@@ -168,7 +183,6 @@ userSchema.index({ status: 1 })
 
 // ── HASH PASSWORD BEFORE SAVE ────────────────────────────────
 userSchema.pre('save', async function (next) {
-  // Only hash if password was modified
   if (!this.isModified('password')) return next()
   this.password = await bcrypt.hash(this.password, 12)
   next()
@@ -179,7 +193,35 @@ userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password)
 }
 
-// ── VIRTUAL: Full location object ───────────────────────────
+// ── Check if user can submit to a specific NGO ───────────────
+userSchema.methods.canSubmitToNgo = function (ngoId) {
+  const ngoIdStr = ngoId.toString()
+
+  // Primary NGO always allowed
+  if (this.ngo && this.ngo.toString() === ngoIdStr) return true
+
+  // Check approved NGOs
+  if (this.approvedNgos && this.approvedNgos.length > 0) {
+    return this.approvedNgos.some(a => a.ngoId.toString() === ngoIdStr)
+  }
+
+  return false
+}
+
+// ── Get all NGO IDs user can submit to ───────────────────────
+userSchema.methods.getAllowedNgoIds = function () {
+  const ids = []
+  if (this.ngo) ids.push(this.ngo.toString())
+  if (this.approvedNgos) {
+    this.approvedNgos.forEach(a => {
+      const id = a.ngoId.toString()
+      if (!ids.includes(id)) ids.push(id)
+    })
+  }
+  return ids
+}
+
+// ── VIRTUAL: coordinates ────────────────────────────────────
 userSchema.virtual('coordinates').get(function () {
   if (!this.location?.coordinates) return null
   return {

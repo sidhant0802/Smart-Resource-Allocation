@@ -1,0 +1,159 @@
+═══════════════════════════════════════════════════════════
+              ALL LOGIN CREDENTIALS
+═══════════════════════════════════════════════════════════
+
+👑 SUPER ADMIN
+   Email:    superadmin@platform.com
+   Password: Admin@123456
+   Status:   Active
+
+═══════════════════════════════════════════════════════════
+
+🏢 NGO MANAGERS
+   
+   1. Hope Foundation India (APPROVED)
+      Email:    manager1@hopefoundation.in
+      Password: Manager@123
+
+   2. Green Earth NGO (APPROVED)
+      Email:    manager2@greenearth.in
+      Password: Manager@123
+
+   3. Seva Karnataka Trust (PENDING)
+      Email:    manager3@sevakarnataka.in
+      Password: Manager@123
+
+═══════════════════════════════════════════════════════════
+
+👥 COMMITTEE MEMBERS (Password: Committee@123)
+
+   1. committee1@hopefoundation.in → North Delhi (Active)
+   2. committee2@hopefoundation.in → South Delhi (Active)
+   3. committee3@hopefoundation.in → East Delhi (Active)
+   4. committee4@greenearth.in     → Mumbai Central (Active)
+   5. committee5@hopefoundation.in → No Zone (Pending)
+
+═══════════════════════════════════════════════════════════
+
+📋 NGO STAFF (Password: Staff@123)
+
+   1. staff1@hopefoundation.in → North Delhi (Active)
+   2. staff2@hopefoundation.in → South Delhi (Active)
+   3. staff3@greenearth.in     → Mumbai Central (Active)
+   4. staff4@hopefoundation.in → No Zone (Pending)
+
+═══════════════════════════════════════════════════════════
+
+🙋 VOLUNTEERS - Set 1 (Password: Volunteer@123)
+
+   1. vol1@gmail.com → Pooja Nair (Active) - Medical, Counseling
+   2. vol2@gmail.com → Arjun Kapoor (Active) - Teaching, Tech
+   3. vol3@gmail.com → Sneha Reddy (Active) - Cooking, Logistics
+   4. vol4@gmail.com → Manoj Tiwari (Active) - Driving, Construction
+   5. vol5@gmail.com → Divya Krishnan (Active) - Medical, Teaching
+   6. vol6@gmail.com → Rahul Joshi (Active) - Photography, Tech
+   7. vol7@gmail.com → Geeta Pandey (Pending)
+   8. vol8@gmail.com → Karan Malhotra (Pending)
+
+═══════════════════════════════════════════════════════════
+
+🙋 VOLUNTEERS - Set 2 (Password: password123)
+
+   1. rahul.volunteer@gmail.com  → Rahul Kumar (Active)
+      Skills: Communication, Physical Work, First Aid
+      Location: Connaught Place, New Delhi
+
+   2. priya.volunteer@gmail.com  → Priya Sharma (Active)
+      Skills: Teaching, Communication, Organization
+      Location: Karol Bagh, New Delhi
+
+   3. amit.volunteer@gmail.com   → Amit Patel (Active)
+      Skills: First Aid, Physical Work, Driving
+      Location: Rohini, New Delhi
+
+   4. sneha.volunteer@gmail.com  → Sneha Reddy (Active)
+      Skills: Communication, Teaching, Event Management
+      Location: Rajendra Place, New Delhi
+
+   5. vikram.volunteer@gmail.com → Vikram Singh (Active)
+      Skills: Physical Work, Gardening, Community Outreach
+      Location: Noida, Uttar Pradesh
+
+═══════════════════════════════════════════════════════════
+
+🏢 NGOs CREATED
+
+   1. Hope Foundation India - Approved
+   2. Green Earth NGO - Approved
+   3. Seva Karnataka Trust - Pending
+
+═══════════════════════════════════════════════════════════
+
+📍 ZONES CREATED
+
+   1. North Delhi → Hope Foundation
+   2. South Delhi → Hope Foundation
+   3. East Delhi → Hope Foundation
+   4. Mumbai Central → Green Earth
+   5. Thane → Green Earth
+
+═══════════════════════════════════════════════════════════
+
+📄 REPORTS CREATED
+
+   1. Food shortage in slum area
+      Category: Food | Severity: Critical | Urgency: 85/100
+      NGO: Hope Foundation
+
+   2. Medical camp needed for elderly
+      Category: Health | Severity: High | Urgency: 72/100
+      NGO: Green Earth
+
+   3. Education materials needed
+      Category: Education | Severity: Medium | Urgency: 60/100
+      NGO: Seva Karnataka
+
+═══════════════════════════════════════════════════════════
+
+🎯 TASKS CREATED
+
+   1. Food Distribution Drive
+      Category: Food Security | Status: Open | Urgency: 85
+      Volunteers: 2/5 assigned
+
+   2. Medical Camp Setup
+      Category: Healthcare | Status: Open | Urgency: 72
+      Volunteers: 1/3 assigned
+
+   3. Education Material Distribution
+      Category: Education | Status: In-Progress | Urgency: 60
+      Volunteers: 3/4 assigned
+
+   4. Elderly Care Visit
+      Category: Healthcare | Status: Completed | Urgency: 55
+      Volunteers: 2/2 completed
+
+   5. Park Cleaning Drive
+      Category: Environment | Status: Completed | Urgency: 45
+      Volunteers: 1/3 completed
+
+═══════════════════════════════════════════════════════════
+
+📊 TOTAL COUNTS
+
+   Roles:                  5
+   Super Admins:           1
+   NGOs:                   3
+   NGO Managers:           3
+   Zones:                  5
+   Committee Members:      5
+   NGO Staff:              4
+   Volunteers (Set 1):     8
+   Volunteers (Set 2):     5
+   Volunteer Profiles:     5
+   Volunteer Applications: 12
+   Reports:                3
+   Tasks:                  5
+   Total Users:           21
+
+═══════════════════════════════════════════════════════════

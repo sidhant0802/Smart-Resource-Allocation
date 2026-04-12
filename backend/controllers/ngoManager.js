@@ -1,76 +1,161 @@
 const User = require('../models/User')
-const NGO  = require('../models/NGO')
+const NGO = require('../models/NGO')
 const Zone = require('../models/Zone')
+const Report = require('../models/Report')
+const Task = require('../models/Task')
+const VolunteerApplication = require('../models/VolunteerApplication')
+const VolunteerProfile = require('../models/VolunteerProfile')
 
-// ── Get NGO Manager Dashboard Data ──
+// ── Helper: Get manager's NGO ID ─────────────────────────────
+async function getManagerNgoId(user) {
+  if (user.ngo?._id) return user.ngo._id
+  if (user.ngo) return user.ngo
+  const ngo = await NGO.findOne({ managedBy: user._id })
+  return ngo?._id || null
+}
+
+// ══════════════════════════════════════════════════════════════
+// GET DASHBOARD
+// ══════════════════════════════════════════════════════════════
 exports.getDashboard = async (req, res) => {
   try {
-    const userId = req.user._id
+    const ngoId = await getManagerNgoId(req.user)
 
-    // Find the NGO managed by this user
-    const ngo = await NGO.findOne({ managedBy: userId })
-    if (!ngo) {
-      return res.status(404).json({ error: 'No NGO found for this manager' })
+    if (!ngoId) {
+      return res.json({
+        ngo: null,
+        stats: {},
+        zones: [],
+        pendingCommittee: [],
+        pendingStaff: [],
+        committeeMembers: [],
+        ngoStaff: [],
+        volunteers: [],
+      })
     }
 
-    // Get zones under this NGO
-    const zones = await Zone.find({ ngo: ngo._id })
-      .populate('committeeMembers', 'fullName email phone locationName status')
-      .populate('createdBy', 'fullName')
+    // Get NGO
+    const ngo = await NGO.findById(ngoId)
+    if (!ngo) {
+      return res.json({ ngo: null, stats: {}, zones: [] })
+    }
+
+    // Get Zones
+    const zones = await Zone.find({ ngo: ngoId })
+      .populate('committeeMembers', 'fullName email phone status locationName')
       .sort({ createdAt: -1 })
 
-    // Get all users under this NGO
-    const committeeMembers = await User.find({
-      ngo: ngo._id,
-      roleName: 'committee_member',
-    }).select('fullName email phone locationName status zone createdAt')
+    const zoneIds = zones.map((z) => z._id)
 
-    const ngoStaff = await User.find({
-      ngo: ngo._id,
-      roleName: 'ngo_staff',
-    }).select('fullName email phone locationName status zone createdAt')
-
-    const volunteers = await User.find({
-      ngo: ngo._id,
-      roleName: 'volunteer',
-    }).select('fullName email phone locationName status volunteerProfile zone createdAt')
-
-    // Pending approvals (committee members and staff waiting for approval)
+    // Get pending committee members (signed up for this NGO, pending)
     const pendingCommittee = await User.find({
-      ngo: ngo._id,
+      ngo: ngoId,
       roleName: 'committee_member',
       status: 'pending',
-    }).select('fullName email phone locationName createdAt')
+    }).select('fullName email phone locationName location createdAt')
 
+    // Get pending staff
     const pendingStaff = await User.find({
-      ngo: ngo._id,
+      ngo: ngoId,
       roleName: 'ngo_staff',
       status: 'pending',
-    }).select('fullName email phone locationName createdAt')
+    }).select('fullName email phone locationName location createdAt')
 
-    // Stats
+    // Get active committee members
+    const committeeMembers = await User.find({
+      ngo: ngoId,
+      roleName: 'committee_member',
+      status: 'active',
+    }).select('fullName email phone status locationName zone')
+
+    // Get active staff
+    const ngoStaff = await User.find({
+      ngo: ngoId,
+      roleName: 'ngo_staff',
+      status: 'active',
+    }).select('fullName email phone status locationName zone')
+
+    // Get approved volunteers
+    const approvedApps = await VolunteerApplication.find({
+      ngoId,
+      status: 'approved',
+    }).select('volunteerId')
+
+    const volunteerIds = approvedApps.map((a) => a.volunteerId)
+    const volunteers = await User.find({
+      _id: { $in: volunteerIds },
+    }).select('fullName email phone status volunteerProfile locationName')
+
+    // Get pending volunteer applications
+    const pendingVolunteers = await VolunteerApplication.countDocuments({
+      ngoId,
+      status: 'pending',
+    })
+
+    // Report stats
+    const totalReports = await Report.countDocuments({ ngo: ngoId })
+    const sentReports = await Report.countDocuments({
+      ngo: ngoId,
+      visibility: 'sent',
+    })
+    const criticalReports = await Report.countDocuments({
+      ngo: ngoId,
+      visibility: 'sent',
+      'analysis.severityLevel': 'critical',
+    })
+    const pendingReviewReports = await Report.countDocuments({
+      ngo: ngoId,
+      visibility: 'sent',
+      status: 'analyzed',
+    })
+    const resolvedReports = await Report.countDocuments({
+      ngo: ngoId,
+      visibility: 'sent',
+      status: 'resolved',
+    })
+
+    // Task stats
+    const activeTasks = await Task.countDocuments({
+      ngoId,
+      status: { $in: ['open', 'in-progress'] },
+    })
+    const completedTasks = await Task.countDocuments({
+      ngoId,
+      status: 'completed',
+    })
+
     const stats = {
-      totalZones:            zones.length,
-      activeZones:           zones.filter(z => z.status === 'active').length,
+      totalZones: zones.length,
       totalCommitteeMembers: committeeMembers.length,
-      activeCommittee:       committeeMembers.filter(c => c.status === 'active').length,
-      totalStaff:            ngoStaff.length,
-      activeStaff:           ngoStaff.filter(s => s.status === 'active').length,
-      totalVolunteers:       volunteers.length,
-      activeVolunteers:      volunteers.filter(v => v.status === 'active').length,
-      pendingApprovals:      pendingCommittee.length + pendingStaff.length,
+      totalStaff: ngoStaff.length,
+      totalVolunteers: volunteers.length,
+      pendingApprovals:
+        pendingCommittee.length + pendingStaff.length + pendingVolunteers,
+      pendingCommittee: pendingCommittee.length,
+      pendingStaffCount: pendingStaff.length,
+      pendingVolunteers,
+      totalReports,
+      sentReports,
+      criticalReports,
+      pendingReviewReports,
+      resolvedReports,
+      activeTasks,
+      completedTasks,
+      totalPeople:
+        committeeMembers.length +
+        ngoStaff.length +
+        volunteers.length,
     }
 
     res.json({
-      success: true,
       ngo,
       stats,
       zones,
+      pendingCommittee,
+      pendingStaff,
       committeeMembers,
       ngoStaff,
       volunteers,
-      pendingCommittee,
-      pendingStaff,
     })
   } catch (error) {
     console.error('Dashboard error:', error)
@@ -78,122 +163,102 @@ exports.getDashboard = async (req, res) => {
   }
 }
 
-// ── Create Zone ──
+// ══════════════════════════════════════════════════════════════
+// CREATE ZONE
+// ══════════════════════════════════════════════════════════════
 exports.createZone = async (req, res) => {
   try {
-    const userId = req.user._id
+    const ngoId = await getManagerNgoId(req.user)
+    if (!ngoId) return res.status(400).json({ error: 'No NGO found' })
+
     const {
-      name, description, latitude, longitude,
-      locationName, city, state, country, pincode,
+      name,
+      description,
+      latitude,
+      longitude,
+      locationName,
+      city,
+      state,
+      country,
+      pincode,
     } = req.body
 
-    const ngo = await NGO.findOne({ managedBy: userId })
-    if (!ngo) {
-      return res.status(404).json({ error: 'No NGO found' })
-    }
-
-    if (ngo.status !== 'approved') {
-      return res.status(403).json({ error: 'NGO is not approved yet' })
-    }
-
-    if (!name) {
-      return res.status(400).json({ error: 'Zone name is required' })
+    if (!name || !latitude || !longitude) {
+      return res
+        .status(400)
+        .json({ error: 'Name and location are required' })
     }
 
     const zone = await Zone.create({
       name,
-      description:  description  || '',
-      ngo:          ngo._id,
-      latitude:     parseFloat(latitude)  || 0,
-      longitude:    parseFloat(longitude) || 0,
-      locationName: locationName || '',
-      city:         city         || '',
-      state:        state        || '',
-      country:      country      || 'India',
-      pincode:      pincode      || '',
-      createdBy:    userId,
-      status:       'active',
+      description,
+      ngo: ngoId,
+      latitude,
+      longitude,
+      locationName,
+      city,
+      state,
+      country: country || 'India',
+      pincode,
+      createdBy: req.user._id,
+      status: 'active',
     })
 
-    // Update NGO zone count
-    await NGO.findByIdAndUpdate(ngo._id, {
-      $inc: { totalZones: 1 },
-    })
-
-    res.status(201).json({
-      success: true,
-      message: `Zone "${name}" created successfully`,
-      zone,
-    })
+    res.status(201).json({ success: true, zone })
   } catch (error) {
     console.error('Create zone error:', error)
     res.status(500).json({ error: 'Failed to create zone' })
   }
 }
 
-// ── Delete Zone ──
+// ══════════════════════════════════════════════════════════════
+// DELETE ZONE
+// ══════════════════════════════════════════════════════════════
 exports.deleteZone = async (req, res) => {
   try {
-    const userId   = req.user._id
-    const { zoneId } = req.params
+    const ngoId = await getManagerNgoId(req.user)
+    const zone = await Zone.findOne({ _id: req.params.zoneId, ngo: ngoId })
 
-    const ngo = await NGO.findOne({ managedBy: userId })
-    if (!ngo) {
-      return res.status(404).json({ error: 'No NGO found' })
-    }
+    if (!zone) return res.status(404).json({ error: 'Zone not found' })
 
-    const zone = await Zone.findOne({ _id: zoneId, ngo: ngo._id })
-    if (!zone) {
-      return res.status(404).json({ error: 'Zone not found' })
-    }
+    await Zone.findByIdAndDelete(zone._id)
 
-    await Zone.findByIdAndDelete(zoneId)
-
-    await NGO.findByIdAndUpdate(ngo._id, {
-      $inc: { totalZones: -1 },
-    })
-
-    res.json({
-      success: true,
-      message: `Zone "${zone.name}" deleted`,
-    })
+    res.json({ success: true, message: 'Zone deleted' })
   } catch (error) {
     console.error('Delete zone error:', error)
     res.status(500).json({ error: 'Failed to delete zone' })
   }
 }
 
-// ── Appoint Committee Member (approve pending user) ──
-exports.approveCommitteeMember = async (req, res) => {
+// ══════════════════════════════════════════════════════════════
+// APPROVE COMMITTEE MEMBER
+// ══════════════════════════════════════════════════════════════
+exports.approveCommittee = async (req, res) => {
   try {
-    const userId   = req.user._id
-    const { memberId } = req.params
-    const { zoneId }   = req.body
-
-    const ngo = await NGO.findOne({ managedBy: userId })
-    if (!ngo) {
-      return res.status(404).json({ error: 'No NGO found' })
-    }
+    const { memberId, zoneId } = req.body
+    const ngoId = await getManagerNgoId(req.user)
 
     const member = await User.findOne({
-      _id:      memberId,
-      ngo:      ngo._id,
+      _id: memberId,
+      ngo: ngoId,
       roleName: 'committee_member',
+      status: 'pending',
     })
+
     if (!member) {
-      return res.status(404).json({ error: 'Committee member not found' })
+      return res.status(404).json({ error: 'Member not found' })
     }
 
-    // Validate zone exists under this NGO
+    // If zone provided, check if zone already has a committee member
     if (zoneId) {
-      const zone = await Zone.findOne({ _id: zoneId, ngo: ngo._id })
-      if (!zone) {
-        return res.status(404).json({ error: 'Zone not found under your NGO' })
+      const zone = await Zone.findById(zoneId)
+      if (zone && zone.committeeMembers && zone.committeeMembers.length > 0) {
+        return res.status(400).json({
+          error: 'This zone already has a committee member. Each zone can have only one.',
+        })
       }
 
-      // Assign zone
       member.zone = zoneId
-      // Add to zone's committee members
       await Zone.findByIdAndUpdate(zoneId, {
         $addToSet: { committeeMembers: memberId },
       })
@@ -202,92 +267,291 @@ exports.approveCommitteeMember = async (req, res) => {
     member.status = 'active'
     member.committeeProfile = {
       ...member.committeeProfile,
-      appointedBy: userId,
+      appointedBy: req.user._id,
       appointedAt: new Date(),
     }
     await member.save()
 
-    res.json({
-      success: true,
-      message: `${member.fullName} approved as committee member`,
-    })
+    res.json({ success: true, message: 'Committee member approved' })
   } catch (error) {
     console.error('Approve committee error:', error)
-    res.status(500).json({ error: 'Failed to approve committee member' })
+    res.status(500).json({ error: 'Failed to approve' })
   }
 }
 
-// ── Decline Committee Member or Staff ──
-exports.declineUser = async (req, res) => {
+// ══════════════════════════════════════════════════════════════
+// APPROVE STAFF
+// ══════════════════════════════════════════════════════════════
+exports.approveStaff = async (req, res) => {
   try {
-    const userId   = req.user._id
-    const { memberId } = req.params
-
-    const ngo = await NGO.findOne({ managedBy: userId })
-    if (!ngo) {
-      return res.status(404).json({ error: 'No NGO found' })
-    }
+    const { memberId, zoneId } = req.body
+    const ngoId = await getManagerNgoId(req.user)
 
     const member = await User.findOne({
       _id: memberId,
-      ngo: ngo._id,
-    })
-    if (!member) {
-      return res.status(404).json({ error: 'User not found' })
-    }
-
-    member.status = 'suspended'
-    await member.save()
-
-    res.json({
-      success: true,
-      message: `${member.fullName} has been declined`,
-    })
-  } catch (error) {
-    console.error('Decline error:', error)
-    res.status(500).json({ error: 'Failed to decline user' })
-  }
-}
-
-// ── Approve Staff ──
-exports.approveStaff = async (req, res) => {
-  try {
-    const userId   = req.user._id
-    const { memberId } = req.params
-    const { zoneId }   = req.body
-
-    const ngo = await NGO.findOne({ managedBy: userId })
-    if (!ngo) {
-      return res.status(404).json({ error: 'No NGO found' })
-    }
-
-    const staff = await User.findOne({
-      _id:      memberId,
-      ngo:      ngo._id,
+      ngo: ngoId,
       roleName: 'ngo_staff',
+      status: 'pending',
     })
-    if (!staff) {
+
+    if (!member) {
       return res.status(404).json({ error: 'Staff not found' })
     }
 
     if (zoneId) {
-      staff.zone = zoneId
+      member.zone = zoneId
     }
 
-    staff.status = 'active'
-    staff.staffProfile = {
-      ...staff.staffProfile,
-      appointedBy: userId,
+    member.status = 'active'
+    member.staffProfile = {
+      ...member.staffProfile,
+      appointedBy: req.user._id,
       appointedAt: new Date(),
     }
-    await staff.save()
+    await member.save()
+
+    res.json({ success: true, message: 'Staff approved' })
+  } catch (error) {
+    console.error('Approve staff error:', error)
+    res.status(500).json({ error: 'Failed to approve' })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// DECLINE USER
+// ══════════════════════════════════════════════════════════════
+exports.declineUser = async (req, res) => {
+  try {
+    const ngoId = await getManagerNgoId(req.user)
+    const member = await User.findOne({
+      _id: req.params.memberId,
+      ngo: ngoId,
+      status: 'pending',
+    })
+
+    if (!member) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    member.status = 'inactive'
+    await member.save()
+
+    res.json({ success: true, message: 'User declined' })
+  } catch (error) {
+    console.error('Decline error:', error)
+    res.status(500).json({ error: 'Failed to decline' })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// GET ALL NGO REPORTS (all staff reports for this NGO)
+// ══════════════════════════════════════════════════════════════
+exports.getNgoReports = async (req, res) => {
+  try {
+    const ngoId = await getManagerNgoId(req.user)
+    if (!ngoId) {
+      return res.status(400).json({ error: 'No NGO found' })
+    }
+
+    const { status, severity, visibility, search } = req.query
+
+    const filter = { ngo: ngoId }
+
+    if (status) filter.status = status
+    if (severity) filter['analysis.severityLevel'] = severity
+    if (visibility) filter.visibility = visibility
+
+    const reports = await Report.find(filter)
+      .sort({ 'analysis.urgencyScore': -1, createdAt: -1 })
+      .populate('submittedBy', 'fullName email phone locationName zone')
+      .populate('zone', 'name')
+      .populate('ngo', 'name')
+      .populate('reviewedBy', 'fullName')
+
+    // If search query, filter in memory
+    let filtered = reports
+    if (search) {
+      const q = search.toLowerCase()
+      filtered = reports.filter(
+        (r) =>
+          r.title?.toLowerCase().includes(q) ||
+          r.analysis?.category?.toLowerCase().includes(q) ||
+          r.submittedBy?.fullName?.toLowerCase().includes(q) ||
+          r.locationName?.toLowerCase().includes(q)
+      )
+    }
+
+    // Get staff report counts
+    const staffIds = [
+      ...new Set(reports.map((r) => r.submittedBy?._id?.toString()).filter(Boolean)),
+    ]
+    const staffReportCounts = {}
+    for (const sid of staffIds) {
+      staffReportCounts[sid] = reports.filter(
+        (r) => r.submittedBy?._id?.toString() === sid
+      ).length
+    }
 
     res.json({
       success: true,
-      message: `${staff.fullName} approved as NGO staff`,
+      count: filtered.length,
+      reports: filtered,
+      staffReportCounts,
     })
   } catch (error) {
-    console.error('Approve staff error:', error)
-    res.status(500).json({ error: 'Failed to approve staff' })
+    console.error('Get NGO reports error:', error)
+    res.status(500).json({ error: 'Failed to fetch reports' })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// NGO MANAGER: Review report (same as committee)
+// ══════════════════════════════════════════════════════════════
+exports.reviewReport = async (req, res) => {
+  try {
+    const ngoId = await getManagerNgoId(req.user)
+    const { reportId } = req.params
+    const { status, reviewNotes } = req.body
+
+    const validStatuses = ['reviewed', 'resolved', 'rejected']
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' })
+    }
+
+    const report = await Report.findOne({
+      _id: reportId,
+      ngo: ngoId,
+    })
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' })
+    }
+
+    report.status = status
+    report.reviewedBy = req.user._id
+    report.reviewedAt = new Date()
+    report.reviewNotes = reviewNotes || ''
+    await report.save()
+
+    res.json({ success: true, message: `Report ${status}`, report })
+  } catch (error) {
+    console.error('Review report error:', error)
+    res.status(500).json({ error: 'Failed to review report' })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// NGO MANAGER: Delete report
+// ══════════════════════════════════════════════════════════════
+exports.deleteReport = async (req, res) => {
+  try {
+    const ngoId = await getManagerNgoId(req.user)
+    const report = await Report.findOne({
+      _id: req.params.reportId,
+      ngo: ngoId,
+    })
+
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' })
+    }
+
+    await Report.findByIdAndDelete(report._id)
+
+    res.json({ success: true, message: 'Report deleted' })
+  } catch (error) {
+    console.error('Delete report error:', error)
+    res.status(500).json({ error: 'Failed to delete report' })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// NGO MANAGER: Get report stats
+// ══════════════════════════════════════════════════════════════
+exports.getReportStats = async (req, res) => {
+  try {
+    const ngoId = await getManagerNgoId(req.user)
+    if (!ngoId) return res.json({ success: true, stats: {} })
+
+    const [
+      total,
+      drafts,
+      sent,
+      critical,
+      high,
+      medium,
+      low,
+      pendingReview,
+      reviewed,
+      resolved,
+      rejected,
+    ] = await Promise.all([
+      Report.countDocuments({ ngo: ngoId }),
+      Report.countDocuments({ ngo: ngoId, visibility: 'draft' }),
+      Report.countDocuments({ ngo: ngoId, visibility: 'sent' }),
+      Report.countDocuments({
+        ngo: ngoId,
+        'analysis.severityLevel': 'critical',
+      }),
+      Report.countDocuments({
+        ngo: ngoId,
+        'analysis.severityLevel': 'high',
+      }),
+      Report.countDocuments({
+        ngo: ngoId,
+        'analysis.severityLevel': 'medium',
+      }),
+      Report.countDocuments({
+        ngo: ngoId,
+        'analysis.severityLevel': 'low',
+      }),
+      Report.countDocuments({ ngo: ngoId, visibility: 'sent', status: 'analyzed' }),
+      Report.countDocuments({ ngo: ngoId, status: 'reviewed' }),
+      Report.countDocuments({ ngo: ngoId, status: 'resolved' }),
+      Report.countDocuments({ ngo: ngoId, status: 'rejected' }),
+    ])
+
+    // Per-staff breakdown
+    const staffMembers = await User.find({
+      ngo: ngoId,
+      roleName: 'ngo_staff',
+      status: 'active',
+    }).select('fullName')
+
+    const staffBreakdown = await Promise.all(
+      staffMembers.map(async (s) => {
+        const count = await Report.countDocuments({ submittedBy: s._id })
+        const sentCount = await Report.countDocuments({
+          submittedBy: s._id,
+          visibility: 'sent',
+        })
+        return {
+          _id: s._id,
+          fullName: s.fullName,
+          totalReports: count,
+          sentReports: sentCount,
+        }
+      })
+    )
+
+    res.json({
+      success: true,
+      stats: {
+        total,
+        drafts,
+        sent,
+        critical,
+        high,
+        medium,
+        low,
+        pendingReview,
+        reviewed,
+        resolved,
+        rejected,
+        staffBreakdown,
+      },
+    })
+  } catch (error) {
+    console.error('Report stats error:', error)
+    res.status(500).json({ error: 'Failed to get stats' })
   }
 }

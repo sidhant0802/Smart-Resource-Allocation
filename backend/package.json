@@ -5,13 +5,16 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-    "seed": "node seed/seedRoles.js",
-    "seed:dummy": "node seed/seedDummyData.js"
+    "seed:roles": "node seed/seedRoles.js",
+    "seed:dummy": "node seed/seedDummyData.js",
+    "seed:volunteers": "node seed/seedVolunteersAndTasks.js",
+    "seed:all": "npm run seed:roles && npm run seed:dummy && npm run seed:volunteers",
+    "seed:clean": "node seed/cleanDatabase.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@xenova/transformers": "^2.17.2",
-    "axios": "^1.14.0",
+    "axios": "^1.15.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -22,6 +25,7 @@
     "mongoose": "^8.0.3",
     "multer": "^2.1.1",
     "node-fetch": "^3.3.2",
+    "nodemailer": "^6.10.1",
     "pdf-parse": "^2.4.5",
     "tesseract.js": "^7.0.0",
     "uuid": "^13.0.0",
