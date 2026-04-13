@@ -1,4 +1,5 @@
 import os
+import pathlib
 import time
 import logging
 import tempfile
@@ -8,6 +9,10 @@ import uvicorn
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
+
+# ✅ Force load .env from same folder as this file
+load_dotenv(pathlib.Path(__file__).parent / ".env")
+print(f"🔑 GEMINI_API_KEY: {'✅ Found' if os.getenv('GEMINI_API_KEY') else '❌ Missing'}")
 
 from models.schemas import ChatRequest
 from services.extractor import TextExtractor

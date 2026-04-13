@@ -8,7 +8,7 @@ const getHeaders = () => ({
 // Get volunteer dashboard data
 export const getDashboardData = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/volunteer/dashboard`, {
+    const response = await fetch(`${API_BASE_URL}/volunteers/dashboard`, {
       method: 'GET',
       headers: getHeaders()
     })
@@ -24,7 +24,7 @@ export const getDashboardData = async () => {
 export const getAvailableTasks = async (filters = {}) => {
   try {
     const params = new URLSearchParams(filters)
-    const response = await fetch(`${API_BASE_URL}/volunteer/tasks?${params}`, {
+    const response = await fetch(`${API_BASE_URL}/volunteers/tasks?${params}`, {
       method: 'GET',
       headers: getHeaders()
     })
@@ -39,7 +39,7 @@ export const getAvailableTasks = async (filters = {}) => {
 // Apply to NGO
 export const applyToNGO = async (ngoId) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/volunteer/apply-ngo`, {
+    const response = await fetch(`${API_BASE_URL}/volunteers/apply-ngo`, {
       method: 'POST',
       headers: getHeaders(),
       body: JSON.stringify({ ngoId })
@@ -55,7 +55,7 @@ export const applyToNGO = async (ngoId) => {
 // Get my NGOs
 export const getMyNGOs = async () => {
   try {
-    const response = await fetch(`${API_BASE_URL}/volunteer/my-ngos`, {
+    const response = await fetch(`${API_BASE_URL}/volunteers/my-ngos`, {
       method: 'GET',
       headers: getHeaders()
     })
@@ -67,10 +67,10 @@ export const getMyNGOs = async () => {
   }
 }
 
-// ✅ NEW: Update profile
+// Update profile
 export const updateProfile = async (profileData) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/volunteer/profile`, {
+    const response = await fetch(`${API_BASE_URL}/volunteers/profile`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify(profileData)
@@ -84,10 +84,10 @@ export const updateProfile = async (profileData) => {
   }
 }
 
-// ✅ NEW: Update location
+// Update location
 export const updateLocation = async (coordinates, locationName) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/volunteer/location`, {
+    const response = await fetch(`${API_BASE_URL}/volunteers/location`, {
       method: 'PUT',
       headers: getHeaders(),
       body: JSON.stringify({ coordinates, locationName })
@@ -101,13 +101,48 @@ export const updateLocation = async (coordinates, locationName) => {
   }
 }
 
+// Apply to task
+export const applyToTask = async (taskId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/apply`, {
+      method: 'POST',
+      headers: getHeaders()
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.message || 'Failed to apply')
+    return data
+  } catch (error) {
+    console.error('Error:', error)
+    throw error
+  }
+}
+
+// Complete task
+export const completeTask = async (taskId, feedbackData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/complete`, {
+      method: 'PATCH',
+      headers: getHeaders(),
+      body: JSON.stringify(feedbackData)
+    })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.message || 'Failed to complete task')
+    return data
+  } catch (error) {
+    console.error('Error:', error)
+    throw error
+  }
+}
+
 const volunteerApi = {
   getDashboardData,
   getAvailableTasks,
   applyToNGO,
   getMyNGOs,
   updateProfile,
-  updateLocation
+  updateLocation,
+  applyToTask,
+  completeTask,
 }
 
 export default volunteerApi

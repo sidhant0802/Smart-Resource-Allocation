@@ -121,92 +121,49 @@ exports.reviewReport = async (req, res) => {
     res.status(500).json({ error: 'Failed to review' })
   }
 }
-
-// ── Committee: Zone stats ────────────────────────────────────
 exports.getZoneStats = async (req, res) => {
   try {
     const zoneId = req.user.zone
-
-    // Get user's NGO ID
-    let ngoId = req.user.ngo?._id || req.user.ngo || null
-    if (!ngoId && req.user.roleName === 'ngo_manager') {
-      const managedNgo = await NGO.findOne({ managedBy: req.user._id })
-      if (managedNgo) ngoId = managedNgo._id
-    }
+    const ngoId = req.user.ngo?._id || req.user.ngo
 
     const [total, critical, high, pending, resolved, reviewed, rejected] =
       await Promise.all([
         Report.countDocuments({ zone: zoneId, visibility: 'sent' }),
-        Report.countDocuments({
-          zone: zoneId,
-          visibility: 'sent',
-          'analysis.severityLevel': 'critical',
-        }),
-        Report.countDocuments({
-          zone: zoneId,
-          visibility: 'sent',
-          'analysis.severityLevel': 'high',
-        }),
-        Report.countDocuments({
-          zone: zoneId,
-          visibility: 'sent',
-          status: 'analyzed',
-        }),
-        Report.countDocuments({
-          zone: zoneId,
-          visibility: 'sent',
-          status: 'resolved',
-        }),
-        Report.countDocuments({
-          zone: zoneId,
-          visibility: 'sent',
-          status: 'reviewed',
-        }),
-        Report.countDocuments({
-          zone: zoneId,
-          visibility: 'sent',
-          status: 'rejected',
-        }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', 'analysis.severityLevel': 'critical' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', 'analysis.severityLevel': 'high' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', status: 'analyzed' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', status: 'resolved' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', status: 'reviewed' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', status: 'rejected' }),
       ])
 
     const staffCount = await User.countDocuments({
-      zone: zoneId,
-      roleName: 'ngo_staff',
-      status: 'active',
+      zone: zoneId, roleName: 'ngo_staff', status: 'active',
+    })
+
+    // ✅ Count pending staff in this zone's NGO
+    const pendingStaffCount = await User.countDocuments({
+      ngo: ngoId, roleName: 'ngo_staff', status: 'pending',
     })
 
     const volunteerAppCount = ngoId
-      ? await VolunteerApplication.countDocuments({
-          ngoId: ngoId,
-          status: 'pending',
-        })
+      ? await VolunteerApplication.countDocuments({ ngoId, status: 'pending' })
       : 0
 
     const activeTasks = ngoId
-      ? await Task.countDocuments({
-          ngoId: ngoId,
-          status: { $in: ['open', 'in-progress'] },
-        })
+      ? await Task.countDocuments({ ngoId, status: { $in: ['open', 'in-progress'] } })
       : 0
 
     const approvedVolunteers = ngoId
-      ? await VolunteerApplication.countDocuments({
-          ngoId: ngoId,
-          status: 'approved',
-        })
+      ? await VolunteerApplication.countDocuments({ ngoId, status: 'approved' })
       : 0
 
     res.json({
       success: true,
       stats: {
-        total,
-        critical,
-        high,
-        pending,
-        resolved,
-        reviewed,
-        rejected,
+        total, critical, high, pending, resolved, reviewed, rejected,
         staffCount,
+        pendingStaffCount,
         volunteerAppCount,
         activeTasks,
         approvedVolunteers,
@@ -217,7 +174,6 @@ exports.getZoneStats = async (req, res) => {
     res.status(500).json({ error: 'Failed to get stats' })
   }
 }
-
 // ── Get single report ────────────────────────────────────────
 exports.getReport = async (req, res) => {
   try {
@@ -614,5 +570,72 @@ exports.getCommitteeProfile = async (req, res) => {
   } catch (error) {
     console.error('Profile error:', error)
     res.status(500).json({ error: 'Failed to fetch profile' })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// COMMITTEE: Get pending staff needing approval in their zone
+// ══════════════════════════════════════════════════════════════
+exports.getZonePendingStaff = async (req, res) => {
+  try {
+    const User = require('../models/User')
+
+    const pendingStaff = await User.find({
+      ngo: req.user.ngo?._id || req.user.ngo,
+      zone: req.user.zone,
+      roleName: 'ngo_staff',
+      status: 'pending',
+    })
+      .select('fullName email phone locationName location createdAt')
+      .sort({ createdAt: -1 })
+
+    res.json({ success: true, staff: pendingStaff })
+  } catch (error) {
+    console.error('Pending staff error:', error)
+    res.status(500).json({ error: 'Failed to fetch pending staff' })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// COMMITTEE: Approve/reject pending staff in their zone
+// ══════════════════════════════════════════════════════════════
+exports.reviewStaffApplication = async (req, res) => {
+  try {
+    const { staffId } = req.params
+    const { action } = req.body
+    const User = require('../models/User')
+
+    const staff = await User.findOne({
+      _id: staffId,
+      ngo: req.user.ngo?._id || req.user.ngo,
+      roleName: 'ngo_staff',
+      status: 'pending',
+    })
+
+    if (!staff) {
+      return res.status(404).json({ error: 'Pending staff not found' })
+    }
+
+    if (action === 'approve') {
+      staff.status = 'active'
+      staff.zone = req.user.zone
+      staff.staffProfile = {
+        appointedBy: req.user._id,
+        appointedAt: new Date(),
+      }
+      await staff.save()
+
+      console.log(`✅ Staff approved by committee: ${staff.fullName}`)
+      res.json({ success: true, message: 'Staff approved' })
+    } else if (action === 'reject') {
+      staff.status = 'inactive'
+      await staff.save()
+      res.json({ success: true, message: 'Staff rejected' })
+    } else {
+      res.status(400).json({ error: 'Action must be approve or reject' })
+    }
+  } catch (error) {
+    console.error('Review staff error:', error)
+    res.status(500).json({ error: 'Failed to review staff' })
   }
 }

@@ -86,11 +86,13 @@ exports.getDashboard = async (req, res) => {
       _id: { $in: volunteerIds },
     }).select('fullName email phone status volunteerProfile locationName')
 
-    // Get pending volunteer applications
-    const pendingVolunteers = await VolunteerApplication.countDocuments({
-      ngoId,
-      status: 'pending',
-    })
+   // ✅ Get full volunteer application data, not just count
+const pendingVolunteerApps = await VolunteerApplication.find({
+  ngoId,
+  status: 'pending',
+})
+  .populate('volunteerId', 'fullName email phone locationName location volunteerProfile')
+  .sort({ createdAt: -1 })
 
     // Report stats
     const totalReports = await Report.countDocuments({ ngo: ngoId })
@@ -130,10 +132,10 @@ exports.getDashboard = async (req, res) => {
       totalStaff: ngoStaff.length,
       totalVolunteers: volunteers.length,
       pendingApprovals:
-        pendingCommittee.length + pendingStaff.length + pendingVolunteers,
+  pendingCommittee.length + pendingStaff.length + pendingVolunteerApps.length,
       pendingCommittee: pendingCommittee.length,
       pendingStaffCount: pendingStaff.length,
-      pendingVolunteers,
+      pendingVolunteers: pendingVolunteerApps.length,
       totalReports,
       sentReports,
       criticalReports,
@@ -147,12 +149,13 @@ exports.getDashboard = async (req, res) => {
         volunteers.length,
     }
 
-    res.json({
+        res.json({
       ngo,
       stats,
       zones,
       pendingCommittee,
       pendingStaff,
+      pendingVolunteers: pendingVolunteerApps,  // ✅ ADD THIS
       committeeMembers,
       ngoStaff,
       volunteers,
@@ -553,5 +556,56 @@ exports.getReportStats = async (req, res) => {
   } catch (error) {
     console.error('Report stats error:', error)
     res.status(500).json({ error: 'Failed to get stats' })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// APPROVE/REJECT VOLUNTEER APPLICATION
+// ══════════════════════════════════════════════════════════════
+exports.approveVolunteer = async (req, res) => {
+  try {
+    const { applicationId } = req.params
+    const { action, rejectionReason } = req.body
+    const ngoId = await getManagerNgoId(req.user)
+
+    const application = await VolunteerApplication.findById(applicationId)
+    if (!application) {
+      return res.status(404).json({ error: 'Application not found' })
+    }
+
+    if (application.ngoId.toString() !== ngoId.toString()) {
+      return res.status(403).json({ error: 'Not authorized' })
+    }
+
+    if (action === 'approve') {
+      application.status = 'approved'
+      application.approvedAt = new Date()
+
+      await User.findByIdAndUpdate(application.volunteerId, {
+        $addToSet: {
+          approvedNgos: {
+            ngoId: application.ngoId,
+            approvedAt: new Date(),
+            approvedBy: req.user._id,
+          },
+        },
+        $set: { status: 'active' },
+      })
+
+      console.log(`✅ Volunteer approved for NGO: ${ngoId}`)
+    } else if (action === 'reject') {
+      application.status = 'rejected'
+      application.rejectedAt = new Date()
+      application.rejectionReason = rejectionReason || ''
+    } else {
+      return res.status(400).json({ error: 'Action must be approve or reject' })
+    }
+
+    await application.save()
+
+    res.json({ success: true, message: `Volunteer ${action}d` })
+  } catch (error) {
+    console.error('Volunteer approval error:', error)
+    res.status(500).json({ error: 'Failed to review volunteer' })
   }
 }

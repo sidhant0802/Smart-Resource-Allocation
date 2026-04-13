@@ -90,6 +90,10 @@ export default function CommitteeDashboard() {
   const [approvedVolunteers, setApprovedVolunteers] = useState([])
   const [approvedVolLoading, setApprovedVolLoading] = useState(false)
   const [reviewAppLoading, setReviewAppLoading] = useState(null)
+  // ✅ Pending Staff
+  const [pendingStaff, setPendingStaff] = useState([])
+  const [pendingStaffLoading, setPendingStaffLoading] = useState(false)
+  const [staffReviewLoading, setStaffReviewLoading] = useState(null)
 
   // Tasks
   const [tasks, setTasks] = useState([])
@@ -199,7 +203,26 @@ export default function CommitteeDashboard() {
       setApprovedVolLoading(false)
     }
   }
+    const fetchPendingStaff = async () => {
+    setPendingStaffLoading(true)
+    try {
+      const res = await reportApi.getZonePendingStaff()
+      setPendingStaff(res.staff || [])
+    } catch (err) { console.error(err) }
+    finally { setPendingStaffLoading(false) }
+  }
 
+  const handleReviewStaff = async (staffId, action) => {
+    setStaffReviewLoading(staffId)
+    try {
+      await reportApi.reviewStaffApp(staffId, { action })
+      showSuccess(`Staff ${action}d!`)
+      fetchPendingStaff()
+      fetchStaff()
+      fetchData()
+    } catch (err) { alert('Failed: ' + err.message) }
+    finally { setStaffReviewLoading(null) }
+  }
   const fetchTasks = async () => {
     setTasksLoading(true)
     try {
@@ -245,8 +268,9 @@ export default function CommitteeDashboard() {
 
   useEffect(() => {
     if (activeTab === 'reports' || activeTab === 'critical') fetchReports()
-    if (activeTab === 'people') {
+     if (activeTab === 'people') {
       fetchStaff()
+      fetchPendingStaff()
       fetchVolunteerApps()
       fetchApprovedVolunteers()
     }
@@ -1153,7 +1177,54 @@ const handleCreateTask = async (report) => {
             <h2 className="text-2xl font-bold text-gray-800">
               People Management
             </h2>
-
+                        {/* ✅ Pending Staff Approvals */}
+            <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
+              <div className="px-6 py-4 border-b bg-yellow-50 flex items-center justify-between">
+                <h3 className="font-semibold text-yellow-800">
+                  ⏳ Pending Staff Approvals ({pendingStaff.length})
+                </h3>
+                <button onClick={fetchPendingStaff} className="text-xs text-yellow-600 hover:underline">🔄</button>
+              </div>
+              {pendingStaffLoading ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin h-8 w-8 border-2 border-yellow-600 border-t-transparent rounded-full mx-auto" />
+                </div>
+              ) : pendingStaff.length === 0 ? (
+                <div className="p-8 text-center text-gray-400 text-sm">✅ No pending staff approvals</div>
+              ) : (
+                <div className="divide-y">
+                  {pendingStaff.map(s => (
+                    <div key={s._id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center text-lg">📋</div>
+                        <div>
+                          <p className="font-medium text-gray-800 text-sm">{s.fullName}</p>
+                          <p className="text-xs text-gray-500">{s.email} • {s.phone}</p>
+                          {s.locationName && <p className="text-xs text-gray-400">📍 {s.locationName}</p>}
+                          <p className="text-xs text-gray-400">Applied: {new Date(s.createdAt).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleReviewStaff(s._id, 'approve')}
+                          disabled={staffReviewLoading === s._id}
+                          className="px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg font-medium disabled:opacity-50"
+                        >
+                          {staffReviewLoading === s._id ? '...' : '✅ Approve'}
+                        </button>
+                        <button
+                          onClick={() => handleReviewStaff(s._id, 'reject')}
+                          disabled={staffReviewLoading === s._id}
+                          className="px-3 py-1.5 bg-red-100 text-red-700 text-xs rounded-lg font-medium disabled:opacity-50"
+                        >
+                          ❌ Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
             {/* Staff */}
             <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
               <div className="px-6 py-4 border-b bg-purple-50 flex items-center justify-between">

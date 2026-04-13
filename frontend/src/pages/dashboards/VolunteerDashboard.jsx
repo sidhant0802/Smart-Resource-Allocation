@@ -421,19 +421,19 @@ export default function VolunteerDashboard() {
   // ═══════════════════════════════════════
 
   const handleApplyTask = async (taskId) => {
-    setActionLoading(taskId)
-    try {
-      const response = await taskApi.applyToTask(taskId)
-      if (response.success) {
-        showSuccess('Application submitted! Awaiting committee approval.')
-        await fetchVolunteerData()
-      }
-    } catch (err) {
-      alert('❌ ' + err.message)
-    } finally {
-      setActionLoading(null)
+  try {
+    await volunteerApi.applyToTask(taskId)
+    // or: await taskApi.applyToTask(taskId)
+    alert('✅ Application submitted! Awaiting approval.')
+    // refresh data
+  } catch (error) {
+    if (error.message.includes('Already')) {
+      alert('ℹ️ You already applied for this task. Waiting for approval.')
+    } else {
+      alert('❌ ' + error.message)
     }
   }
+}
 
   const handleCompleteTask = async () => {
     if (!myCurrentTask) return

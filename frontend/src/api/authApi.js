@@ -21,15 +21,15 @@ API.interceptors.response.use(
   }
 )
 
-// Add these to authApi:
+// ═══════════════════════════════════════
+// Auth
+// ═══════════════════════════════════════
 export const authApi = {
   register: (data) => API.post('/auth/register', data),
   login: (data) => API.post('/auth/login', data),
   getMe: () => API.get('/auth/me'),
-
-  // ✅ Add these:
   signup: (data) => API.post('/auth/register', data),
-  getApprovedNgos: () => API.get('/auth/approved-ngos'),
+  getApprovedNgos: (params) => API.get('/auth/approved-ngos', { params }),
 }
 
 // ═══════════════════════════════════════
@@ -64,17 +64,16 @@ export const chatApi = {
 export const reportApi = {
   getZoneReports: (params) => API.get('/reports/zone', { params }),
   getZoneStats: () => API.get('/reports/zone/stats'),
-  reviewReport: (reportId, data) =>
-    API.put(`/reports/${reportId}/review`, data),
+  reviewReport: (reportId, data) => API.put(`/reports/${reportId}/review`, data),
   getReport: (reportId) => API.get(`/reports/${reportId}`),
   getZoneStaff: () => API.get('/reports/zone/staff'),
+  getZonePendingStaff: () => API.get('/reports/zone/pending-staff'),
+  reviewStaffApp: (staffId, data) =>
+    API.patch(`/reports/zone/staff/${staffId}/review`, data),
   getVolunteerApplications: (params) =>
     API.get('/reports/zone/volunteer-applications', { params }),
   reviewVolunteerApp: (applicationId, data) =>
-    API.patch(
-      `/reports/zone/volunteer-applications/${applicationId}/review`,
-      data
-    ),
+    API.patch(`/reports/zone/volunteer-applications/${applicationId}/review`, data),
   getZoneTasks: (params) => API.get('/reports/zone/tasks', { params }),
   getApprovedVolunteers: () => API.get('/reports/zone/approved-volunteers'),
   getCommitteeProfile: () => API.get('/reports/zone/profile'),
@@ -110,6 +109,11 @@ export const volunteerApi = {
   getMyNGOs: () => API.get('/volunteers/my-ngos'),
   updateProfile: (data) => API.put('/volunteers/profile', data),
   updateLocation: (data) => API.put('/volunteers/location', data),
+
+  // ✅ NEW
+  searchNGOs: (params) => API.get('/volunteers/search-ngos', { params }),
+  getMyNGOTasks: (params) => API.get('/volunteers/my-ngo-tasks', { params }),
+  submitReport: (data) => API.post('/volunteers/submit-report', data),
 }
 
 // ═══════════════════════════════════════
@@ -137,29 +141,22 @@ export const superAdminApi = {
 }
 
 // ═══════════════════════════════════════
-// NGO Manager ← THIS WAS MISSING/INCOMPLETE
+// NGO Manager
 // ═══════════════════════════════════════
 export const ngoManagerApi = {
-  // Dashboard
   getDashboard: () => API.get('/ngo-manager/dashboard'),
-
-  // Zones
   createZone: (data) => API.post('/ngo-manager/zones', data),
   deleteZone: (zoneId) => API.delete(`/ngo-manager/zones/${zoneId}`),
-
-  // Approvals
   approveCommittee: (memberId, zoneId) =>
     API.post('/ngo-manager/approve-committee', { memberId, zoneId }),
   approveStaff: (memberId, zoneId) =>
     API.post('/ngo-manager/approve-staff', { memberId, zoneId }),
   declineUser: (memberId) =>
     API.delete(`/ngo-manager/decline/${memberId}`),
-
-  // ✅ Reports - these were missing
-  getNgoReports: (params) =>
-    API.get('/ngo-manager/reports', { params }),
-  getReportStats: () =>
-    API.get('/ngo-manager/reports/stats'),
+  reviewVolunteerApp: (applicationId, data) =>
+    API.patch(`/ngo-manager/volunteer-applications/${applicationId}/review`, data),
+  getNgoReports: (params) => API.get('/ngo-manager/reports', { params }),
+  getReportStats: () => API.get('/ngo-manager/reports/stats'),
   reviewReport: (reportId, data) =>
     API.put(`/ngo-manager/reports/${reportId}/review`, data),
   deleteReport: (reportId) =>

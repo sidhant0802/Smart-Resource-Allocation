@@ -48,6 +48,7 @@ app.use('/api/chat',         require('./routes/chat'))
 app.use('/api/volunteers',   require('./routes/volunteer.routes'))
 app.use('/api/tasks',        require('./routes/task.routes'))
 
+
 // ── 404 Handler ───────────────────────────────────────────────
 app.use((req, res) => {
   res.status(404).json({

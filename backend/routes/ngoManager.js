@@ -13,12 +13,15 @@ router.get('/dashboard', controller.getDashboard)
 router.post('/zones', controller.createZone)
 router.delete('/zones/:zoneId', controller.deleteZone)
 
-// Approvals
+// Approvals - Committee & Staff
 router.post('/approve-committee', controller.approveCommittee)
 router.post('/approve-staff', controller.approveStaff)
 router.delete('/decline/:memberId', controller.declineUser)
 
-// Reports - order matters: specific routes before param routes
+// ✅ Volunteer approval
+router.patch('/volunteer-applications/:applicationId/review', controller.approveVolunteer)
+
+// Reports
 router.get('/reports/stats', controller.getReportStats)
 router.get('/reports', controller.getNgoReports)
 router.put('/reports/:reportId/review', controller.reviewReport)

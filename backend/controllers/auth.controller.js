@@ -73,10 +73,8 @@ exports.register = async (req, res) => {
       location,
       locationName:    locationName    || '',
       operatingRadius: operatingRadius || 10,
-
-      // ✅ KEY CHANGE: Everyone starts as 'active'
-      // No approval needed just to have an account
-      status: 'active',
+      // ✅ Role-based status
+status: (role === 'committee_member' || role === 'ngo_staff') ? 'pending' : 'active',
     }
 
     // ── 6. Role-specific data ─────────────────────────────────
@@ -265,8 +263,13 @@ exports.login = async (req, res) => {
 
     // ✅ Only check for suspended - active users can always login
     if (user.status === 'suspended') {
-      return res.status(401).json({ error: 'SUSPENDED' })
-    }
+  return res.status(401).json({ error: 'SUSPENDED' })
+}
+
+// ✅ Add this
+if (user.status === 'pending') {
+  return res.status(401).json({ error: 'PENDING' })
+}
 
     // Update last login
     user.lastLogin = new Date()

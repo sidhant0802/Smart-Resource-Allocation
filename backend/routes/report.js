@@ -9,20 +9,25 @@ router.use(protect)
 router.get('/my-reports', restrictTo('ngo_staff'), controller.getMyReports)
 router.put('/:reportId/visibility', restrictTo('ngo_staff'), controller.updateVisibility)
 
-// ── Committee-only routes ──
+// ── Committee routes ──
 router.get('/zone', restrictTo('committee_member'), controller.getZoneReports)
 router.get('/zone/stats', restrictTo('committee_member'), controller.getZoneStats)
 router.put('/:reportId/review', restrictTo('committee_member'), controller.reviewReport)
 router.get('/zone/profile', restrictTo('committee_member'), controller.getCommitteeProfile)
 
-// ── Shared: committee_member + ngo_manager ──
+// ── Committee: Staff & Volunteer management ──
 router.get('/zone/staff', restrictTo('committee_member', 'ngo_manager'), controller.getZoneStaff)
+
+router.get('/zone/pending-staff', restrictTo('committee_member'), controller.getZonePendingStaff)
+router.patch('/zone/staff/:staffId/review', restrictTo('committee_member'), controller.reviewStaffApplication)
+
 router.get('/zone/volunteer-applications', restrictTo('committee_member', 'ngo_manager'), controller.getZoneVolunteerApplications)
 router.patch('/zone/volunteer-applications/:applicationId/review', restrictTo('committee_member', 'ngo_manager'), controller.reviewVolunteerApplication)
+
 router.get('/zone/tasks', restrictTo('committee_member', 'ngo_manager'), controller.getZoneTasks)
 router.get('/zone/approved-volunteers', restrictTo('committee_member', 'ngo_manager'), controller.getApprovedVolunteers)
 
-// ── Shared: any authenticated user ──
+// ── Shared ──
 router.get('/:reportId', controller.getReport)
 
 module.exports = router
