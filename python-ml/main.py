@@ -304,4 +304,4 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
     logger.info(f"🚀 Starting NGO ML Service on port {port}")
     logger.info(f"🤖 Gemini: {'✅ Ready' if gemini_service.available else '❌ Unavailable'}")
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
