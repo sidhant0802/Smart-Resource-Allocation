@@ -1,11 +1,50 @@
-.env
+# ── Node ──────────────────────────────────────────────────────
 node_modules/
 backend/node_modules/
 frontend/node_modules/
-__pycache__/
-*.pyc
-venv/
+npm-debug.log*
+yarn-debug.log*
+
+# ── Python ────────────────────────────────────────────────────
 python-ml/venv/
+python-ml/env/
+python-ml/__pycache__/
+python-ml/**/__pycache__/
+python-ml/**/*.pyc
+python-ml/**/*.pyo
+python-ml/.pytest_cache/
+
+# ── Environment files ─────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+backend/.env.production
+frontend/.env.local
+python-ml/.env
+
+# ── Build output ──────────────────────────────────────────────
+frontend/dist/
+frontend/build/
+frontend/.vercel/
+backend/.vercel/
+
+# ── Uploads (use Cloudinary in production) ───────────────────
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# ── OS files ──────────────────────────────────────────────────
 .DS_Store
-logs/
+.DS_Store?
+Thumbs.db
+*.swp
+*.swo
+
+# ── IDE ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.sublime-project
+
+# ── Logs ──────────────────────────────────────────────────────
 *.log
+logs/
