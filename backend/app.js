@@ -17,15 +17,9 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (mobile apps, curl, etc.)
       if (!origin) return callback(null, true)
-
-      // Allow all vercel.app domains
       if (origin.endsWith('.vercel.app')) return callback(null, true)
-
-      // Check allowed list
       if (allowedOrigins.includes(origin)) return callback(null, true)
-
       callback(new Error(`CORS: ${origin} not allowed`))
     },
     credentials:    true,
@@ -87,7 +81,6 @@ const initializeApp = async () => {
   try {
     await connectDB()
 
-    // Register all models
     require('./models/Role')
     require('./models/NGO')
     require('./models/Zone')
@@ -109,14 +102,10 @@ const initializeApp = async () => {
 // ── Start ─────────────────────────────────────────────────────
 initializeApp()
 
-// Local dev server
-if (process.env.NODE_ENV !== 'production') {
-  const PORT = process.env.PORT || 5000
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`)
-    console.log(`📡 Health: http://localhost:${PORT}/api/health`)
-  })
-}
+const PORT = process.env.PORT || 5000
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server running on port ${PORT}`)
+  console.log(`📡 Health: http://localhost:${PORT}/api/health`)
+})
 
-// Export for Vercel serverless
 module.exports = app
