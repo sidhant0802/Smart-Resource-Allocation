@@ -5,39 +5,33 @@ const { protect, restrictTo } = require('../middleware/auth.middleware')
 
 router.use(protect)
 
-// Dashboard
-router.get('/dashboard',
-  restrictTo('volunteer'),
-  controller.getDashboardData
-)
+// ── Dashboard ──
+router.get('/dashboard', restrictTo('volunteer'), controller.getDashboardData)
 
-// Tasks
-router.get('/tasks',
-  restrictTo('volunteer'),
-  controller.getAvailableTasks
-)
+// ── Available Tasks ──
+router.get('/tasks', restrictTo('volunteer'), controller.getAvailableTasks)
 
-// NGO
-router.post('/apply-ngo',
-  restrictTo('volunteer'),
-  controller.applyToNGO
-)
+// ── ✅ Apply to Task ──
+router.post('/tasks/:taskId/apply', restrictTo('volunteer'), controller.applyToTask)
 
-router.get('/my-ngos',
-  restrictTo('volunteer'),
-  controller.getMyNGOs
-)
+// ── ✅ Get applied task IDs ──
+router.get('/tasks/applied-ids', restrictTo('volunteer'), controller.getAppliedTaskIds)
 
-// ✅ NEW: Profile update
-router.put('/profile',
-  restrictTo('volunteer'),
-  controller.updateProfile
-)
+// ── ✅ Get my assignments (from committee) ──
+router.get('/my-assignments', restrictTo('volunteer'), controller.getMyAssignments)
 
-// ✅ NEW: Update location (live location)
-router.put('/location',
-  restrictTo('volunteer'),
-  controller.updateLocation
-)
+// ── ✅ Get available tasks in area (for NGO staff) ──
+router.get('/tasks-in-area', restrictTo('ngo_staff', 'volunteer'), controller.getTasksInArea)
+
+// ── ✅ My task applications (for NGO staff) ──
+router.get('/my-task-applications', restrictTo('ngo_staff', 'volunteer'), controller.getMyTaskApplications)
+
+// ── NGO ──
+router.post('/apply-ngo', restrictTo('volunteer'), controller.applyToNGO)
+router.get('/my-ngos', restrictTo('volunteer'), controller.getMyNGOs)
+
+// ── Profile ──
+router.put('/profile', restrictTo('volunteer'), controller.updateProfile)
+router.put('/location', restrictTo('volunteer'), controller.updateLocation)
 
 module.exports = router

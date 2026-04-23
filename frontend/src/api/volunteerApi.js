@@ -5,7 +5,7 @@ const getHeaders = () => ({
   'Authorization': `Bearer ${localStorage.getItem('token')}`
 })
 
-// Get volunteer dashboard data
+// ── Dashboard ──────────────────────────────────────────────
 export const getDashboardData = async () => {
   try {
     const response = await fetch(`${API_BASE_URL}/volunteers/dashboard`, {
@@ -20,7 +20,7 @@ export const getDashboardData = async () => {
   }
 }
 
-// Get available tasks
+// ── Available Tasks ────────────────────────────────────────
 export const getAvailableTasks = async (filters = {}) => {
   try {
     const params = new URLSearchParams(filters)
@@ -36,7 +36,9 @@ export const getAvailableTasks = async (filters = {}) => {
   }
 }
 
-// Apply to NGO
+// ── NGO Applications ───────────────────────────────────────
+
+// Apply to NGO (volunteer)
 export const applyToNGO = async (ngoId) => {
   try {
     const response = await fetch(`${API_BASE_URL}/volunteers/apply-ngo`, {
@@ -44,8 +46,9 @@ export const applyToNGO = async (ngoId) => {
       headers: getHeaders(),
       body: JSON.stringify({ ngoId })
     })
-    if (!response.ok) throw new Error('Failed to apply')
-    return await response.json()
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.message || data.error || 'Failed to apply')
+    return data
   } catch (error) {
     console.error('Error:', error)
     throw error
@@ -67,7 +70,22 @@ export const getMyNGOs = async () => {
   }
 }
 
-// Update profile
+// ✅ NEW: Get all approved NGOs to apply to
+export const getAllNgos = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/approved-ngos`, {
+      method: 'GET',
+      headers: getHeaders()
+    })
+    if (!response.ok) throw new Error('Failed to fetch NGOs')
+    return await response.json()
+  } catch (error) {
+    console.error('Error:', error)
+    throw error
+  }
+}
+
+// ── Profile ────────────────────────────────────────────────
 export const updateProfile = async (profileData) => {
   try {
     const response = await fetch(`${API_BASE_URL}/volunteers/profile`, {
@@ -84,7 +102,7 @@ export const updateProfile = async (profileData) => {
   }
 }
 
-// Update location
+// ── Location ───────────────────────────────────────────────
 export const updateLocation = async (coordinates, locationName) => {
   try {
     const response = await fetch(`${API_BASE_URL}/volunteers/location`, {
@@ -101,19 +119,51 @@ export const updateLocation = async (coordinates, locationName) => {
   }
 }
 
-// Apply to task
+// ── Tasks ──────────────────────────────────────────────────
+
+// ✅ FIXED: Apply to task (correct endpoint)
 export const applyToTask = async (taskId) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/apply`, {
+    const response = await fetch(`${API_BASE_URL}/volunteers/tasks/${taskId}/apply`, {
       method: 'POST',
       headers: getHeaders()
     })
     const data = await response.json()
-    if (!response.ok) throw new Error(data.message || 'Failed to apply')
+    if (!response.ok) throw new Error(data.error || data.message || 'Failed to apply')
     return data
   } catch (error) {
     console.error('Error:', error)
     throw error
+  }
+}
+
+// ✅ NEW: Get task IDs already applied to (prevent duplicates)
+export const getAppliedTaskIds = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/volunteers/tasks/applied-ids`, {
+      method: 'GET',
+      headers: getHeaders()
+    })
+    if (!response.ok) return { taskIds: [] }
+    return await response.json()
+  } catch (error) {
+    console.error('Error:', error)
+    return { taskIds: [] }
+  }
+}
+
+// ✅ NEW: Get my worker assignments (from committee)
+export const getMyAssignments = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/volunteers/my-assignments`, {
+      method: 'GET',
+      headers: getHeaders()
+    })
+    if (!response.ok) return { assignments: [] }
+    return await response.json()
+  } catch (error) {
+    console.error('Error:', error)
+    return { assignments: [] }
   }
 }
 
@@ -134,14 +184,18 @@ export const completeTask = async (taskId, feedbackData) => {
   }
 }
 
+// ── Export ─────────────────────────────────────────────────
 const volunteerApi = {
   getDashboardData,
   getAvailableTasks,
   applyToNGO,
   getMyNGOs,
+  getAllNgos,
   updateProfile,
   updateLocation,
   applyToTask,
+  getAppliedTaskIds,
+  getMyAssignments,
   completeTask,
 }
 

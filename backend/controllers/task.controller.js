@@ -144,7 +144,6 @@ async function notifyNearbyVolunteers(task) {
     return { sent: 0, total: 0, error: error.message }
   }
 }
-
 // ═══════════════════════════════════════════════════════════
 // Create task + notify nearby volunteers
 // ═══════════════════════════════════════════════════════════
@@ -166,43 +165,67 @@ exports.createTask = async (req, res) => {
       affectedPeople,
     } = req.body
 
-    if (!reportId || !ngoId || !title || !volunteersNeeded || !duration) {
+    // ✅ Validate required fields
+    if (!reportId || !ngoId || !title) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields',
+        message: 'Missing required fields: reportId, ngoId, title',
       })
     }
 
-    const endDate = new Date(startDate)
-    endDate.setDate(endDate.getDate() + duration)
+    // ✅ Safe parse numbers
+    const parsedVolunteersNeeded = parseInt(volunteersNeeded) || 1
+    const parsedDuration = parseInt(duration) || 1
+    const parsedUrgencyScore = parseInt(urgencyScore) || 50
+    const parsedAffectedPeople = parseInt(affectedPeople) || 0
+
+    if (parsedVolunteersNeeded < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'volunteersNeeded must be at least 1',
+      })
+    }
+
+    if (parsedDuration < 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'duration must be at least 1 day',
+      })
+    }
+
+    // ✅ Calculate end date
+    const taskStartDate = startDate ? new Date(startDate) : new Date()
+    const endDate = new Date(taskStartDate)
+    endDate.setDate(endDate.getDate() + parsedDuration)
 
     const task = await Task.create({
       reportId,
       ngoId,
-      title,
-      description,
-      category,
+      title: title.trim(),
+      description: description?.trim() || '',
+      category: category || 'Community Development',
       location,
-      locationName,
-      volunteersNeeded,
-      startDate: new Date(startDate),
-      duration,
+      locationName: locationName || '',
+      volunteersNeeded: parsedVolunteersNeeded,
+      startDate: taskStartDate,
+      duration: parsedDuration,
       endDate,
-      urgencyScore: urgencyScore || 50,
-      skillsRequired: skillsRequired || [],
-      affectedPeople,
+      urgencyScore: parsedUrgencyScore,
+      skillsRequired: Array.isArray(skillsRequired)
+        ? skillsRequired.filter(Boolean)
+        : [],
+      affectedPeople: parsedAffectedPeople,
       status: 'open',
     })
 
-    console.log('✅ Task created:', task._id)
+    console.log(`✅ Task created: ${task._id} - "${task.title}"`)
+    console.log(`   Volunteers needed: ${parsedVolunteersNeeded}, Duration: ${parsedDuration} days`)
 
-    // ✅ Send email notifications to nearby active volunteers (async, don't block response)
+    // ✅ Send email notifications to nearby approved volunteers
     let emailResult = { sent: 0, total: 0 }
     try {
       emailResult = await notifyNearbyVolunteers(task)
-      console.log(
-        `📧 Notification result: ${emailResult.sent}/${emailResult.total} emails sent`
-      )
+      console.log(`📧 Notifications: ${emailResult.sent}/${emailResult.total || 0} sent`)
     } catch (emailError) {
       console.error('⚠️ Email notification error (non-blocking):', emailError.message)
     }
@@ -213,7 +236,7 @@ exports.createTask = async (req, res) => {
       data: task,
       notifications: {
         volunteersNotified: emailResult.sent || 0,
-        totalEligible: emailResult.total || 0,
+        totalEligible: emailResult.total || emailResult.sent || 0,
         details: emailResult.details || [],
       },
     })

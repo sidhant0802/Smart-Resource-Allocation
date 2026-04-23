@@ -3,184 +3,220 @@ from typing import List, Dict
 
 logger = logging.getLogger(__name__)
 
-# ── Action Templates ──────────────────────────────────────────
+# ── Severity-based actions ────────────────────────────────────
 SEVERITY_ACTIONS = {
     "critical": [
-        "⚠️ SEND TO COMMITTEE IMMEDIATELY — Do not delay",
-        "Alert senior NGO management and zone coordinator NOW",
-        "Call emergency services if life is at risk",
-        "Document everything with photos/video as evidence",
+        "🚨 SEND TO COMMITTEE IMMEDIATELY — This is a life-threatening emergency",
+        "Call emergency services (108 ambulance / 100 police / 101 fire) RIGHT NOW",
+        "Alert senior NGO management and zone coordinator immediately",
+        "Evacuate people from danger zone if safe to do so",
+        "Document with photos/video as evidence before anything changes",
     ],
     "high": [
-        "Submit report to committee within 24 hours",
-        "Escalate to zone coordinator immediately",
-        "Deploy field team for on-ground assessment",
-        "Document with photos and witness statements",
+        "⚠️ Submit report to committee TODAY — do not delay",
+        "Alert zone coordinator and senior field manager immediately",
+        "Deploy field response team for on-ground assessment within hours",
+        "Document all evidence with photos, videos, and witness statements",
+        "Establish communication with district authority",
     ],
     "medium": [
-        "Submit report for committee review within this week",
-        "Conduct detailed field assessment with documentation",
-        "Coordinate with local authority for quick resolution",
-        "Monitor situation daily for any escalation",
+        "📋 Submit report for committee review within 48-72 hours",
+        "Conduct detailed field assessment with full documentation",
+        "Coordinate with local authority and panchayat for resolution",
+        "Monitor situation daily and update if it worsens",
+        "Engage community leaders for immediate partial solutions",
     ],
     "low": [
-        "Include in weekly committee report",
+        "📝 Include in weekly committee report",
         "Document for records and future reference",
-        "Monitor situation monthly for changes",
+        "Monitor monthly for any escalation",
         "Discuss in next regular committee meeting",
+        "Engage gram panchayat for routine resolution",
     ],
     "info": [
-        "File for records — no immediate action required",
+        "📁 File for records — no immediate action required",
         "Review in next quarterly assessment",
         "Share with relevant department for awareness",
+        "Continue monitoring",
     ],
 }
 
+# ── Category-specific actions (India context) ─────────────────
 CATEGORY_ACTIONS: Dict[str, List[str]] = {
     "Health": [
-        "Deploy medical team to affected area within 24 hours",
-        "Arrange emergency medicines and first aid supplies",
-        "Coordinate with nearest PHC/CHC/district hospital",
-        "Conduct health camp for affected population",
-        "Report to district health officer if epidemic suspected",
-        "Ensure clean water and sanitation to prevent spread",
+        "Contact nearest PHC/CHC/district hospital — request immediate medical support",
+        "Arrange emergency medicines and first aid supplies for affected people",
+        "Report to District Health Officer (DHO) with full documentation",
+        "Conduct rapid health assessment of all affected people",
+        "Set up temporary health camp with available ASHA/ANM workers",
+        "Ensure isolation if infectious disease suspected — prevent spread",
+        "Contact State Disease Surveillance Unit if epidemic suspected",
     ],
     "Water": [
-        "Arrange alternative clean water supply immediately",
-        "Conduct water quality test to identify contamination",
-        "Repair damaged pipeline/handpump/borewell urgently",
-        "Distribute water purification tablets to families",
-        "Report to water and sanitation department (PHED)",
-        "Install temporary water storage tanks",
+        "Arrange alternative clean drinking water supply IMMEDIATELY (water tanker)",
+        "Distribute water purification tablets/chlorine tablets to families",
+        "Conduct water quality test to identify contamination source",
+        "Report to PHED (Public Health Engineering Department) for pipeline repair",
+        "Repair/restore damaged handpump or borewell urgently",
+        "Install temporary water storage tanks if supply will take time",
+        "Alert district collector if water shortage affects entire area",
     ],
     "Sanitation": [
-        "Arrange immediate waste collection and disposal",
-        "Deploy sanitation workers and cleaning equipment",
-        "Install temporary toilet/latrine if permanent missing",
+        "Arrange immediate waste collection and removal from affected area",
+        "Deploy municipal sanitation workers/cleaning team",
+        "Clear blocked drains to prevent waterlogging and disease",
+        "Report to Gram Panchayat/Municipal Corporation sanitation department",
         "Conduct hygiene awareness session for community",
-        "Report to municipal/gram panchayat sanitation department",
-        "Arrange regular disinfection of affected area",
+        "Install temporary toilets if permanent facilities damaged",
+        "Arrange regular disinfection/fumigation to prevent disease spread",
+        "Contact District Swachh Bharat Mission coordinator",
     ],
     "Food": [
-        "Arrange emergency food distribution immediately",
-        "Verify ration card eligibility of affected families",
-        "Contact district PDS officer for emergency grain supply",
-        "Assess children under 5 for malnutrition urgently",
-        "Coordinate with anganwadi for supplementary nutrition",
-        "Report to district food supply officer",
+        "Arrange IMMEDIATE emergency food distribution for affected families",
+        "Contact District Food Supply Officer for emergency PDS grain release",
+        "Verify ration card status of affected families — assist those without cards",
+        "Assess children under 5 years for malnutrition (MUAC measurement)",
+        "Coordinate with Anganwadi workers for supplementary nutrition (ICDS)",
+        "Contact PM POSHAN/MDM coordinator for school meals continuity",
+        "Apply for PM Garib Kalyan Anna Yojana benefits for affected families",
+        "Connect families with local NGO food distribution programs",
     ],
     "Violence": [
-        "Report to local police station with full details",
-        "Ensure immediate safety and protection of victims",
-        "Provide emergency legal aid and counseling support",
-        "Contact women/child helpline (1091/1098) if applicable",
-        "Coordinate with district women and child welfare officer",
-        "Arrange safe shelter for victims if needed",
+        "Report to local police station IMMEDIATELY — file FIR with all details",
+        "Ensure safety and immediate protection of victims",
+        "Contact Women Helpline: 181 / Child Helpline: 1098 if applicable",
+        "Connect victims with legal aid and counseling support",
+        "Coordinate with District Women & Child Development Officer",
+        "Arrange safe temporary shelter for victims if staying is unsafe",
+        "Document all injuries with photos and medical reports as evidence",
+        "Contact District Collector if authorities are unresponsive",
     ],
     "Disaster": [
-        "Activate NGO emergency response protocol immediately",
-        "Evacuate affected families to designated relief camps",
-        "Coordinate with NDRF/SDRF/district disaster authority",
-        "Arrange emergency relief — food, water, medicines, shelter",
-        "Set up emergency helpline and communication center",
+        "Activate NGO emergency response protocol IMMEDIATELY",
+        "Evacuate people from danger zone to designated relief camps",
+        "Call NDRF/SDRF: 011-24363260 / District Disaster Management Authority",
+        "Arrange emergency relief kit: food, water, medicines, blankets, tarpaulin",
+        "Set up emergency communication center for coordination",
         "Conduct rapid needs assessment within 6 hours",
+        "Coordinate with district administration for relief distribution",
+        "Register all affected families for government relief schemes",
     ],
     "Education": [
-        "Report to Block Education Officer (BEO) with documentation",
-        "Arrange temporary learning space if school non-functional",
-        "Identify and reach out to dropout-risk children",
-        "Coordinate with school management committee (SMC)",
-        "Ensure midday meal continuity for enrolled students",
-        "Follow up with district education department",
+        "Report to Block Education Officer (BEO) with supporting documentation",
+        "Ensure Midday Meal (PM POSHAN) continuity for enrolled students",
+        "Identify and engage dropout-risk children with home visits",
+        "Arrange alternative learning space if school building damaged",
+        "Coordinate with School Management Committee (SMC) for resolution",
+        "Report to District Education Officer if BEO unresponsive",
+        "Check RTE compliance — every child 6-14 years has right to education",
+        "Engage ASHA/Anganwadi workers to track out-of-school children",
     ],
     "Shelter": [
-        "Arrange immediate temporary shelter for displaced families",
-        "Conduct structural damage assessment with engineer",
-        "Apply for PM Awas Yojana or state housing scheme",
-        "Provide emergency repair materials (tarpaulin, etc.)",
-        "Report to district housing/revenue officer",
-        "Coordinate with local gram panchayat for support",
+        "Arrange immediate temporary shelter (tarpaulin, tent, community hall)",
+        "Conduct structural safety assessment with qualified engineer",
+        "Register families for PM Awas Yojana (Gramin/Urban) — housing scheme",
+        "Apply for emergency state disaster relief housing assistance",
+        "Coordinate with gram panchayat for interim housing support",
+        "Document damage with photos, GPS coordinates for insurance claims",
+        "Report to district revenue officer for disaster relief assessment",
+        "Connect with state housing board for low-cost housing options",
     ],
     "Infrastructure": [
-        "Report formally to gram panchayat/municipal office",
-        "Submit complaint to PWD/electricity department",
-        "Arrange temporary fix to ensure safety",
-        "Document damage with photos and GPS location",
-        "Follow up weekly with concerned authority",
-        "Escalate to district collector if ignored",
+        "Report formally to Gram Panchayat/Ward Office with documentation",
+        "File complaint with PWD (Public Works Department) for road/bridge",
+        "File complaint with DISCOM/electricity department for power issues",
+        "Document damage with photos, GPS coordinates, and date-stamps",
+        "Follow up weekly in writing — keep record of all complaints",
+        "Escalate to District Collector/SDM if local authority ignores",
+        "Contact state-level helpline for public infrastructure complaints",
+        "Engage local elected representative (MLA/Councilor/Sarpanch) for support",
     ],
     "Other": [
-        "Document issue thoroughly with photos and statements",
-        "Report to relevant local authority",
+        "Document issue thoroughly with photos, statements, and GPS location",
+        "Report to the most relevant local authority department",
         "Conduct community meeting to assess full impact",
         "Coordinate with appropriate government department",
-        "Monitor and report progress weekly",
+        "Monitor weekly and update report with new developments",
+        "Engage local elected representative for resolution",
+        "Connect with district administration for formal intervention",
     ],
 }
 
-# ── Vulnerable group specific actions ─────────────────────────
+# ── Vulnerable group actions ──────────────────────────────────
 VULNERABLE_GROUP_ACTIONS = {
     "children": [
-        "Prioritize protection and welfare of children",
-        "Contact child helpline 1098 if children at risk",
+        "Prioritize safety and welfare of children above all else",
+        "Report to Child Welfare Committee (CWC) if children at risk",
+        "Call Child Helpline 1098 for immediate child protection",
+    ],
+    "infant": [
+        "Ensure immediate access to medical care for infants",
+        "Contact ASHA/ANM for emergency newborn/infant care",
     ],
     "pregnant": [
         "Ensure immediate access to maternal healthcare",
-        "Contact ASHA worker and ANM for support",
+        "Contact ASHA worker and ANM for emergency support",
+        "Arrange transport to nearest maternity hospital if needed",
     ],
     "elderly": [
-        "Ensure elderly have access to medicine and care",
-        "Assign community volunteer for daily check",
+        "Ensure elderly have access to medicine, food, and care",
+        "Assign community volunteer for daily welfare check",
+        "Contact state senior citizen helpline for support",
     ],
     "disabled": [
-        "Ensure accessible support and assistance",
-        "Coordinate with disability welfare department",
+        "Ensure accessible support and assistance for differently-abled",
+        "Contact District Disability Welfare Officer for support",
+        "Arrange home-based support if mobility is restricted",
+    ],
+    "women": [
+        "Ensure safety and dignity of women in the situation",
+        "Contact Women Helpline 181 if women face violence or discrimination",
+        "Engage women SHG leaders for community-level support",
     ],
 }
 
 
 class ActionGenerator:
-    """
-    Generates context-aware suggested actions based on:
-    1. Severity level
-    2. Category
-    3. Vulnerable groups present
-    4. Immediate risk level
-    """
+    """Generates context-aware, India-specific suggested actions"""
 
     @classmethod
     def generate(
         cls,
-        severity:    str,
-        category:    str,
-        immediate:   bool,
-        text:        str,
-        top_n:       int = 6,
+        severity: str,
+        category: str,
+        immediate: bool,
+        text: str,
+        top_n: int = 6,
     ) -> List[str]:
         """Generate ranked suggested actions"""
         actions = []
 
-        # 1. Severity-based actions first
+        # 1. Severity-based first (2 actions)
         sev_actions = SEVERITY_ACTIONS.get(severity, SEVERITY_ACTIONS["info"])
         actions.extend(sev_actions[:2])
 
-        # 2. Category-specific actions
+        # 2. Immediate risk extra action
+        if immediate and severity not in ["critical"]:
+            actions.insert(
+                1,
+                "🚨 IMMEDIATE RISK DETECTED — Escalate to senior management NOW"
+            )
+
+        # 3. Category-specific (3 actions)
         cat_actions = CATEGORY_ACTIONS.get(category, CATEGORY_ACTIONS["Other"])
         actions.extend(cat_actions[:3])
 
-        # 3. Vulnerable group actions
+        # 4. Vulnerable group actions (1 action each)
         lower = text.lower()
         for group, group_actions in VULNERABLE_GROUP_ACTIONS.items():
             if group in lower:
                 actions.extend(group_actions[:1])
-
-        # 4. Extra immediate action
-        if immediate and severity not in ["critical"]:
-            actions.insert(1, "🚨 Escalate to senior management — immediate risk detected")
+                if len(actions) >= top_n + 2:
+                    break
 
         # Remove duplicates while preserving order
-        seen    = set()
-        unique  = []
+        seen = set()
+        unique = []
         for action in actions:
             if action not in seen:
                 seen.add(action)

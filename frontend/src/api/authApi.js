@@ -49,6 +49,14 @@ export const uploadApi = {
   getNearbyNgos: (params) => API.get('/upload/nearby-ngos', { params }),
   getNgoZones: (ngoId) => API.get(`/upload/ngo/${ngoId}/zones`),
   applyToNgo: (data) => API.post('/upload/apply-ngo', data),
+
+  // Tasks for NGO Staff
+  getAvailableTasksInArea: (params) =>
+    API.get('/volunteers/tasks-in-area', { params }),
+  getMyTaskApplications: () =>
+    API.get('/volunteers/my-task-applications'),
+  applyToTask: (data) =>
+    API.post(`/volunteers/tasks/${data.taskId}/apply`, {}),
 }
 
 // ═══════════════════════════════════════
@@ -83,18 +91,37 @@ export const reportApi = {
 // Tasks
 // ═══════════════════════════════════════
 export const taskApi = {
+  // Create task (committee)
   createTask: (data) => API.post('/tasks', data),
+
+  // Get task details
   getTaskDetails: (taskId) => API.get(`/tasks/${taskId}`),
-  applyToTask: (taskId) => API.post(`/tasks/${taskId}/apply`),
+
+  // Apply to task (volunteer - uses volunteer routes)
+  applyToTask: (taskId) =>
+    API.post(`/volunteers/tasks/${taskId}/apply`, {}),
+
+  // Respond to invitation
   respondToInvitation: (taskId, data) =>
     API.post(`/tasks/${taskId}/respond`, data),
+
+  // Complete task
   completeTask: (taskId, data) =>
     API.patch(`/tasks/${taskId}/complete`, data),
+
+  // Assign volunteers manually
   assignVolunteers: (taskId, data) =>
     API.post(`/tasks/${taskId}/assign-volunteers`, data),
+
+  // Update duration
   updateDuration: (taskId, data) =>
     API.patch(`/tasks/${taskId}/duration`, data),
-  getPendingApplications: () => API.get('/tasks/applications/pending'),
+
+  // Get pending volunteer applications (committee)
+  getPendingApplications: () =>
+    API.get('/tasks/applications/pending'),
+
+  // Review volunteer application (committee)
   reviewTaskVolunteer: (taskId, volunteerId, data) =>
     API.patch(`/tasks/${taskId}/volunteers/${volunteerId}/review`, data),
 }
@@ -110,7 +137,18 @@ export const volunteerApi = {
   updateProfile: (data) => API.put('/volunteers/profile', data),
   updateLocation: (data) => API.put('/volunteers/location', data),
 
-  // ✅ NEW
+  // Prevent duplicate applications
+  getAppliedTaskIds: () =>
+    API.get('/volunteers/tasks/applied-ids'),
+
+  // My committee assignments
+  getMyAssignments: () =>
+    API.get('/volunteers/my-assignments'),
+
+  // Get all approved NGOs
+  getAllNgos: () => API.get('/auth/approved-ngos'),
+
+  // NGO Staff helpers
   searchNGOs: (params) => API.get('/volunteers/search-ngos', { params }),
   getMyNGOTasks: (params) => API.get('/volunteers/my-ngo-tasks', { params }),
   submitReport: (data) => API.post('/volunteers/submit-report', data),
@@ -161,4 +199,36 @@ export const ngoManagerApi = {
     API.put(`/ngo-manager/reports/${reportId}/review`, data),
   deleteReport: (reportId) =>
     API.delete(`/ngo-manager/reports/${reportId}`),
+}
+
+// ═══════════════════════════════════════
+// Assignments (Worker Assignment System)
+// ═══════════════════════════════════════
+export const assignmentApi = {
+  // Committee: Create assignment
+  createAssignment: (data) => API.post('/assignments', data),
+
+  // Committee: Assign volunteer to slot
+  assignVolunteer: (assignmentId, data) =>
+    API.post(`/assignments/${assignmentId}/assign-volunteer`, data),
+
+  // Committee: Get their assignments
+  getMyAssignments: (status) =>
+    API.get(`/assignments/my-assignments?status=${status || ''}`),
+
+  // Get assignment details
+  getAssignment: (assignmentId) =>
+    API.get(`/assignments/${assignmentId}`),
+
+  // Volunteer: Approve via email link (no auth needed)
+  volunteerApprove: (token) =>
+    API.post(`/assignments/approve/${token}`),
+
+  // Volunteer: Reject via email link (no auth needed)
+  volunteerReject: (token, data) =>
+    API.post(`/assignments/reject/${token}`, data || {}),
+
+  // Volunteer: Get pending assignments
+  getVolunteerPending: () =>
+    API.get('/assignments/volunteer/pending'),
 }

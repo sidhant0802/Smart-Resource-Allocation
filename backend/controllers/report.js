@@ -314,7 +314,6 @@ exports.reviewVolunteerApplication = async (req, res) => {
       isAuthorized = true
     }
 
-    // If ngo_manager, also check via NGO.managedBy
     if (!isAuthorized && req.user.roleName === 'ngo_manager') {
       const ngo = await NGO.findOne({
         _id: application.ngoId,
@@ -333,6 +332,7 @@ exports.reviewVolunteerApplication = async (req, res) => {
       application.status = 'approved'
       application.approvedAt = new Date()
 
+      // ✅ FIX: Update volunteer's approvedNgos array
       await User.findByIdAndUpdate(application.volunteerId, {
         $addToSet: {
           approvedNgos: {
@@ -343,6 +343,9 @@ exports.reviewVolunteerApplication = async (req, res) => {
         },
         $set: { status: 'active' },
       })
+
+      console.log(`✅ Volunteer application approved for NGO: ${application.ngoId}`)
+
     } else if (action === 'reject') {
       application.status = 'rejected'
       application.rejectedAt = new Date()
@@ -572,30 +575,102 @@ exports.getCommitteeProfile = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch profile' })
   }
 }
-
 // ══════════════════════════════════════════════════════════════
-// COMMITTEE: Get pending staff needing approval in their zone
+// COMMITTEE: Get pending staff needing approval
 // ══════════════════════════════════════════════════════════════
 exports.getZonePendingStaff = async (req, res) => {
   try {
-    const User = require('../models/User')
+    const ngoId = req.user.ngo?._id || req.user.ngo
 
-    const pendingStaff = await User.find({
-      ngo: req.user.ngo?._id || req.user.ngo,
-      zone: req.user.zone,
+    if (!ngoId) {
+      return res.status(400).json({ error: 'No NGO associated with your account' })
+    }
+
+    const StaffApplication = require('../models/StaffApplication')
+
+    // ✅ SOURCE 1: Users who registered with this NGO and are pending
+    const pendingUsers = await User.find({
+      ngo: ngoId,
       roleName: 'ngo_staff',
       status: 'pending',
     })
-      .select('fullName email phone locationName location createdAt')
+      .select('fullName email phone locationName location createdAt ngo status')
       .sort({ createdAt: -1 })
 
-    res.json({ success: true, staff: pendingStaff })
+    // ✅ SOURCE 2: StaffApplications that are pending for this NGO
+    const pendingApps = await StaffApplication.find({
+      ngoId: ngoId,
+      status: 'pending',
+    })
+      .populate(
+        'userId',
+        'fullName email phone locationName location createdAt status roleName ngo'
+      )
+      .sort({ createdAt: -1 })
+
+    // ✅ Build result - merge both sources, no duplicates
+    const resultMap = new Map()
+
+    // Add from User model
+    pendingUsers.forEach(u => {
+      resultMap.set(u._id.toString(), {
+        _id: u._id,
+        fullName: u.fullName,
+        email: u.email,
+        phone: u.phone,
+        locationName: u.locationName,
+        location: u.location,
+        createdAt: u.createdAt,
+        source: 'registration',
+        canReview: true,
+      })
+    })
+
+    // Add from StaffApplication (if not already added)
+    pendingApps.forEach(app => {
+      if (!app.userId) return
+
+      const uid = app.userId._id.toString()
+
+      if (!resultMap.has(uid)) {
+        resultMap.set(uid, {
+          _id: app.userId._id,
+          fullName: app.userId.fullName,
+          email: app.userId.email,
+          phone: app.userId.phone,
+          locationName: app.userId.locationName,
+          location: app.userId.location,
+          createdAt: app.createdAt,
+          applicationId: app._id,
+          message: app.message,
+          source: 'staff_application',
+          canReview: true,
+        })
+      } else {
+        // Update existing entry with app info
+        const existing = resultMap.get(uid)
+        existing.applicationId = app._id
+        existing.message = app.message
+        resultMap.set(uid, existing)
+      }
+    })
+
+    const allPendingStaff = Array.from(resultMap.values())
+
+    console.log(`📋 Pending staff for NGO ${ngoId}: ${allPendingStaff.length} total`)
+    console.log(`   From registration: ${pendingUsers.length}`)
+    console.log(`   From applications: ${pendingApps.length}`)
+
+    res.json({
+      success: true,
+      staff: allPendingStaff,
+      count: allPendingStaff.length,
+    })
   } catch (error) {
     console.error('Pending staff error:', error)
     res.status(500).json({ error: 'Failed to fetch pending staff' })
   }
 }
-
 // ══════════════════════════════════════════════════════════════
 // COMMITTEE: Approve/reject pending staff in their zone
 // ══════════════════════════════════════════════════════════════
@@ -603,39 +678,222 @@ exports.reviewStaffApplication = async (req, res) => {
   try {
     const { staffId } = req.params
     const { action } = req.body
-    const User = require('../models/User')
 
-    const staff = await User.findOne({
-      _id: staffId,
-      ngo: req.user.ngo?._id || req.user.ngo,
-      roleName: 'ngo_staff',
-      status: 'pending',
-    })
+    const ngoId = req.user.ngo?._id || req.user.ngo
+    const zoneId = req.user.zone
+
+    if (!ngoId) {
+      return res.status(400).json({ error: 'No NGO associated with your account' })
+    }
+
+    if (!action || !['approve', 'reject'].includes(action)) {
+      return res.status(400).json({ error: 'Action must be approve or reject' })
+    }
+
+    const StaffApplication = require('../models/StaffApplication')
+
+    // ✅ Find the staff user - try multiple ways
+    let staff = await User.findById(staffId)
 
     if (!staff) {
-      return res.status(404).json({ error: 'Pending staff not found' })
+      return res.status(404).json({ error: 'User not found' })
+    }
+
+    // ✅ Check if this staff belongs to this NGO
+    // Either via User.ngo field OR via StaffApplication
+    const staffNgoId = staff.ngo?._id?.toString() || staff.ngo?.toString()
+    const committeeNgoId = ngoId?.toString()
+
+    let staffApp = await StaffApplication.findOne({
+      userId: staffId,
+      ngoId: ngoId,
+    })
+
+    const belongsToNgo = staffNgoId === committeeNgoId || staffApp !== null
+
+    if (!belongsToNgo) {
+      return res.status(404).json({
+        error: 'Staff not found in your NGO',
+        debug: { staffNgoId, committeeNgoId, hasApp: !!staffApp }
+      })
+    }
+
+    // ✅ Check role
+    if (staff.roleName !== 'ngo_staff') {
+      return res.status(400).json({ error: 'User is not an NGO staff member' })
+    }
+
+    // ✅ Allow review if status is pending OR if StaffApplication is pending
+    // (staff applied via applyToNgo flow - their User.status might be 'active' already)
+    const canReview =
+      staff.status === 'pending' ||
+      (staffApp && staffApp.status === 'pending')
+
+    if (!canReview) {
+      return res.status(400).json({
+        error: `Cannot review: User status is "${staff.status}"${staffApp ? `, Application status is "${staffApp.status}"` : ', No application found'}`,
+      })
     }
 
     if (action === 'approve') {
+      // ✅ Update user
       staff.status = 'active'
-      staff.zone = req.user.zone
+      staff.zone = zoneId
+
+      // ✅ Set staffProfile
       staff.staffProfile = {
         appointedBy: req.user._id,
         appointedAt: new Date(),
       }
+
+      // ✅ Add NGO to approvedNgos array
+      const alreadyInApprovedNgos = staff.approvedNgos?.some(
+        a => a.ngoId?.toString() === committeeNgoId
+      )
+
+      if (!alreadyInApprovedNgos) {
+        if (!staff.approvedNgos) staff.approvedNgos = []
+        staff.approvedNgos.push({
+          ngoId: ngoId,
+          approvedAt: new Date(),
+          approvedBy: req.user._id,
+        })
+      }
+
+      // ✅ Make sure ngo field is set
+      if (!staff.ngo) {
+        staff.ngo = ngoId
+      }
+
       await staff.save()
 
-      console.log(`✅ Staff approved by committee: ${staff.fullName}`)
-      res.json({ success: true, message: 'Staff approved' })
+      // ✅ Update StaffApplication if exists
+      if (staffApp) {
+        staffApp.status = 'approved'
+        staffApp.reviewedBy = req.user._id
+        staffApp.reviewedAt = new Date()
+        staffApp.reviewNote = 'Approved by committee'
+        await staffApp.save()
+      } else {
+        // Create application record
+        await StaffApplication.create({
+          userId: staffId,
+          ngoId: ngoId,
+          status: 'approved',
+          reviewedBy: req.user._id,
+          reviewedAt: new Date(),
+          reviewNote: 'Approved by committee',
+        })
+      }
+
+      console.log(`✅ Staff approved: ${staff.fullName} → NGO: ${ngoId}, Zone: ${zoneId}`)
+
+      return res.json({
+        success: true,
+        message: `${staff.fullName} approved successfully`,
+        staff: {
+          _id: staff._id,
+          fullName: staff.fullName,
+          status: staff.status,
+          zone: zoneId,
+          ngo: ngoId,
+        }
+      })
+
     } else if (action === 'reject') {
+
       staff.status = 'inactive'
       await staff.save()
-      res.json({ success: true, message: 'Staff rejected' })
-    } else {
-      res.status(400).json({ error: 'Action must be approve or reject' })
+
+      // ✅ Update StaffApplication if exists
+      if (staffApp) {
+        staffApp.status = 'rejected'
+        staffApp.reviewedBy = req.user._id
+        staffApp.reviewedAt = new Date()
+        await staffApp.save()
+      }
+
+      console.log(`❌ Staff rejected: ${staff.fullName}`)
+
+      return res.json({
+        success: true,
+        message: `${staff.fullName} rejected`
+      })
     }
+
   } catch (error) {
     console.error('Review staff error:', error)
-    res.status(500).json({ error: 'Failed to review staff' })
+    res.status(500).json({ error: 'Failed to review staff: ' + error.message })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// COMMITTEE: Get zone stats - FIXED pending staff count
+// ══════════════════════════════════════════════════════════════
+exports.getZoneStats = async (req, res) => {
+  try {
+    const zoneId = req.user.zone
+    const ngoId = req.user.ngo?._id || req.user.ngo
+
+    const [total, critical, high, pending, resolved, reviewed, rejected] =
+      await Promise.all([
+        Report.countDocuments({ zone: zoneId, visibility: 'sent' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', 'analysis.severityLevel': 'critical' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', 'analysis.severityLevel': 'high' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', status: 'analyzed' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', status: 'resolved' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', status: 'reviewed' }),
+        Report.countDocuments({ zone: zoneId, visibility: 'sent', status: 'rejected' }),
+      ])
+
+    const staffCount = await User.countDocuments({
+      zone: zoneId,
+      roleName: 'ngo_staff',
+      status: 'active',
+    })
+
+    // ✅ FIX: Count pending staff from BOTH User model AND StaffApplication
+    const StaffApplication = require('../models/StaffApplication')
+    const [pendingFromUser, pendingFromApps] = await Promise.all([
+      User.countDocuments({
+        ngo: ngoId,
+        roleName: 'ngo_staff',
+        status: 'pending',
+      }),
+      StaffApplication.countDocuments({
+        ngoId: ngoId,
+        status: 'pending'
+      })
+    ])
+
+    // ✅ Use the higher count (avoid double counting)
+    const pendingStaffCount = Math.max(pendingFromUser, pendingFromApps)
+
+    const volunteerAppCount = ngoId
+      ? await VolunteerApplication.countDocuments({ ngoId, status: 'pending' })
+      : 0
+
+    const activeTasks = ngoId
+      ? await Task.countDocuments({ ngoId, status: { $in: ['open', 'in-progress'] } })
+      : 0
+
+    const approvedVolunteers = ngoId
+      ? await VolunteerApplication.countDocuments({ ngoId, status: 'approved' })
+      : 0
+
+    res.json({
+      success: true,
+      stats: {
+        total, critical, high, pending, resolved, reviewed, rejected,
+        staffCount,
+        pendingStaffCount,
+        volunteerAppCount,
+        activeTasks,
+        approvedVolunteers,
+      },
+    })
+  } catch (error) {
+    console.error('Stats error:', error)
+    res.status(500).json({ error: 'Failed to get stats' })
   }
 }

@@ -47,6 +47,7 @@ app.use('/api/reports',      require('./routes/report'))
 app.use('/api/chat',         require('./routes/chat'))
 app.use('/api/volunteers',   require('./routes/volunteer.routes'))
 app.use('/api/tasks',        require('./routes/task.routes'))
+app.use('/api/assignments',  require('./routes/workerAssignment.routes'))
 
 
 // ── 404 Handler ───────────────────────────────────────────────
@@ -81,6 +82,7 @@ const startServer = async () => {
     require('./models/VolunteerProfile')
     require('./models/VolunteerApplication')
     require('./models/ChatMessage')
+    require('./models/WorkerAssignment')
 
     console.log('✅ All models registered')
 

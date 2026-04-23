@@ -115,7 +115,7 @@ exports.uploadAndProcess = async (req, res) => {
   }
 }
 // ═══════════════════════════════════════════════════════════
-// Get nearby NGOs
+// Get nearby NGOs - FIXED to show correct application status
 // ═══════════════════════════════════════════════════════════
 exports.getNearbyNgos = async (req, res) => {
   try {
@@ -139,22 +139,46 @@ exports.getNearbyNgos = async (req, res) => {
       })
 
       ngos.sort((a, b) => (a.distance || 999) - (b.distance || 999))
+    } else {
+      ngos = ngos.map(n => n.toObject())
     }
 
-    // Check which NGOs this staff has applied to
-    const applications = await StaffApplication.find({ userId: req.user._id })
+    // ✅ FIX: Check StaffApplication AND user.approvedNgos for correct status
+    const staffApps = await StaffApplication.find({ userId: req.user._id })
       .select('ngoId status')
 
-    const applicationMap = {}
-    applications.forEach(app => {
-      applicationMap[app.ngoId.toString()] = app.status
+    const User = require('../models/User')
+    const user = await User.findById(req.user._id)
+      .select('approvedNgos ngo')
+
+    // Build maps
+    const staffAppMap = {}
+    staffApps.forEach(app => {
+      staffAppMap[app.ngoId.toString()] = app.status
     })
 
-    ngos = ngos.map(ngo => ({
-      ...ngo,
-      applicationStatus: applicationMap[ngo._id.toString()] || null,
-      isMyNgo: req.user.ngo?.toString() === ngo._id.toString()
-    }))
+    // Approved from user.approvedNgos
+    const userApprovedSet = new Set(
+      (user.approvedNgos || []).map(a =>
+        (a.ngoId?._id || a.ngoId)?.toString()
+      ).filter(Boolean)
+    )
+
+    ngos = ngos.map(ngo => {
+      const ngoIdStr = ngo._id.toString()
+      let applicationStatus = staffAppMap[ngoIdStr] || null
+
+      // ✅ If in user.approvedNgos, definitely approved
+      if (userApprovedSet.has(ngoIdStr)) {
+        applicationStatus = 'approved'
+      }
+
+      return {
+        ...ngo,
+        applicationStatus,
+        isMyNgo: user.ngo?.toString() === ngoIdStr
+      }
+    })
 
     res.json({ success: true, count: ngos.length, ngos })
   } catch (error) {
@@ -162,7 +186,6 @@ exports.getNearbyNgos = async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch NGOs' })
   }
 }
-
 // ═══════════════════════════════════════════════════════════
 // Apply to NGO as staff
 // ═══════════════════════════════════════════════════════════
@@ -205,28 +228,46 @@ exports.applyToNgo = async (req, res) => {
     res.status(500).json({ error: 'Failed to apply' })
   }
 }
-
-// ═══════════════════════════════════════════════════════════
-// Get my NGO applications
-// ═══════════════════════════════════════════════════════════
 exports.getMyNgoApplications = async (req, res) => {
   try {
     const applications = await StaffApplication.find({ userId: req.user._id })
-      .populate('ngoId', 'name description locationName')
+      .populate('ngoId', 'name description locationName status contactEmail')
       .sort({ createdAt: -1 })
 
-    res.json({
-      success: true,
-      data: applications.map(app => ({
+    // ✅ FIX: Also check user.approvedNgos for any approved status
+    const User = require('../models/User')
+    const user = await User.findById(req.user._id)
+      .populate('approvedNgos.ngoId', 'name locationName')
+      .select('approvedNgos ngo')
+
+    // Build approved NGO ID set
+    const approvedNgoIds = new Set(
+      (user.approvedNgos || []).map(a =>
+        (a.ngoId?._id || a.ngoId)?.toString()
+      ).filter(Boolean)
+    )
+
+    const result = applications.map(app => {
+      const ngoId = (app.ngoId?._id || app.ngoId)?.toString()
+
+      // ✅ FIX: If user.approvedNgos has this NGO, status is approved
+      const isApprovedInUser = approvedNgoIds.has(ngoId)
+      const finalStatus = isApprovedInUser ? 'approved' : app.status
+
+      return {
         _id: app._id,
         ngo: app.ngoId,
-        status: app.status,
+        status: finalStatus,
         message: app.message,
         reviewNote: app.reviewNote,
         appliedAt: app.createdAt,
         reviewedAt: app.reviewedAt
-      }))
+      }
     })
+
+    console.log(`📋 Staff applications: ${result.length} total`)
+
+    res.json({ success: true, data: result })
   } catch (error) {
     console.error('Error:', error)
     res.status(500).json({ error: 'Failed to fetch applications' })
@@ -251,11 +292,12 @@ exports.getNgoZones = async (req, res) => {
 exports.getStaffProfile = async (req, res) => {
   try {
     const User = require('../models/User')
+
     const user = await User.findById(req.user._id)
-      .populate('ngo', 'name status')
+      .populate('ngo', 'name status locationName contactEmail')
       .populate('zone', 'name city state')
-      .populate('approvedNgos.ngoId', 'name locationName')
-      .select('fullName email phone location locationName roleName status approvedNgos')
+      .populate('approvedNgos.ngoId', 'name locationName status')
+      .select('fullName email phone location locationName roleName status approvedNgos ngo zone staffProfile createdAt')
 
     const [totalReports, sentReports, draftReports] = await Promise.all([
       Report.countDocuments({ submittedBy: req.user._id }),
@@ -270,29 +312,76 @@ exports.getStaffProfile = async (req, res) => {
       Report.countDocuments({ submittedBy: req.user._id, 'analysis.severityLevel': 'low' }),
     ])
 
-    // Get approved NGOs from both StaffApplication AND user.approvedNgos
-    const approvedFromUser = (user.approvedNgos || []).map(a => ({
-      _id: a.ngoId?._id,
-      name: a.ngoId?.name || 'Unknown',
-      locationName: a.ngoId?.locationName
-    }))
+    // ✅ FIX: Get approved NGOs from StaffApplication (most reliable source)
+    const approvedApps = await StaffApplication.find({
+      userId: req.user._id,
+      status: 'approved'
+    }).populate('ngoId', 'name locationName status')
+
+    // ✅ Merge from both sources (StaffApplication + user.approvedNgos)
+    const approvedNgosMap = new Map()
+
+    // From StaffApplication
+    approvedApps.forEach(app => {
+      if (app.ngoId) {
+        approvedNgosMap.set(app.ngoId._id.toString(), {
+          _id: app.ngoId._id,
+          name: app.ngoId.name,
+          locationName: app.ngoId.locationName,
+          approvedAt: app.reviewedAt || app.updatedAt,
+          source: 'staff_application'
+        })
+      }
+    })
+
+    // From user.approvedNgos
+    if (user.approvedNgos?.length > 0) {
+      user.approvedNgos.forEach(a => {
+        if (a.ngoId) {
+          const id = a.ngoId._id?.toString() || a.ngoId.toString()
+          if (!approvedNgosMap.has(id)) {
+            approvedNgosMap.set(id, {
+              _id: a.ngoId._id || a.ngoId,
+              name: a.ngoId.name || 'Unknown',
+              locationName: a.ngoId.locationName,
+              approvedAt: a.approvedAt,
+              source: 'user_approved_ngos'
+            })
+          }
+        }
+      })
+    }
+
+    const approvedNgos = Array.from(approvedNgosMap.values())
+
+    console.log(`✅ Staff profile: ${approvedNgos.length} approved NGOs`)
 
     res.json({
       success: true,
       user: {
-        id: user._id, fullName: user.fullName, email: user.email,
-        phone: user.phone, role: user.roleName, status: user.status,
-        location: user.location, locationName: user.locationName,
-        ngo: user.ngo, zone: user.zone,
+        id: user._id,
+        fullName: user.fullName,
+        email: user.email,
+        phone: user.phone,
+        role: user.roleName,
+        status: user.status,
+        location: user.location,
+        locationName: user.locationName,
+        ngo: user.ngo,
+        zone: user.zone,
+        createdAt: user.createdAt,
+        staffProfile: user.staffProfile
       },
       stats: {
-        totalReports, sentReports, draftReports,
+        totalReports,
+        sentReports,
+        draftReports,
         severity: { critical, high, medium, low }
       },
-      approvedNgos: approvedFromUser
+      approvedNgos
     })
   } catch (error) {
-    console.error('Error:', error)
+    console.error('Error fetching staff profile:', error)
     res.status(500).json({ error: 'Failed to fetch profile' })
   }
 }
