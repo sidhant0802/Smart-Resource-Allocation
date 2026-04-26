@@ -262,7 +262,7 @@ class GeminiService:
                 raise ValueError("GEMINI_API_KEY not set in environment")
 
             self.client = genai.Client(api_key=api_key)
-            self.model = 'gemini-2.0-flash-exp'
+            self.model = 'gemini-2.0-flash'
             self.available = True
             logger.info(f"✅ Gemini initialized: {self.model}")
         except Exception as e:
